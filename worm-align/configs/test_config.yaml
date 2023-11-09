@@ -1,0 +1,47 @@
+dataset:
+  fixed_image_shape: [208, 96, 56]
+  moving_image_shape: [208, 96, 56]
+  test:
+    dir:
+    - "/home/alicia/data_personal/test_preprocess/test/2022-08-02-01"
+    - "/home/alicia/data_personal/test_preprocess/test/2022-04-18-04"
+    format: "h5"
+    labeled: false
+  train:
+    dir:
+    - "/home/alicia/data_personal/test_preprocess/train/2022-01-09-01"
+    - "/home/alicia/data_personal/test_preprocess/train/2022-01-23-04"
+    format: "h5"
+    labeled: false
+  type: paired
+  valid:
+    dir:
+    - "/home/alicia/data_personal/test_preprocess/valid/2022-07-26-01"
+    - "/home/alicia/data_personal/test_preprocess/valid/2022-07-20-01"
+    format: "h5"
+    labeled: false
+train:
+  backbone:
+    extract_levels: [0, 1, 2, 3]
+    name: "local"
+    num_channel_initial: 16
+  epochs: 300
+  loss:
+    image:
+      kernel_size: 16
+      name: "lncc"
+      weight: 1.0
+    regularization:
+      name: "bending"
+      weight: 0.2
+  method: "ddf"
+  optimizer:
+    learning_rate: 0.001
+    name: "Adam"
+  preprocess:
+    batch_size: 4
+    data_augmentation:
+      name: "affine"
+    num_parallel_calls: -1
+    shuffle_buffer_num_batch: 2
+  save_period: 1
