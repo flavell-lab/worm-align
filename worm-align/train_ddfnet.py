@@ -1,5 +1,4 @@
 from datetime import datetime
-from deepreg.predict import predict
 from deepreg.train import train
 import copy
 import os
