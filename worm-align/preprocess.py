@@ -2,8 +2,7 @@ from euler_gpu.grid_search import grid_search
 from euler_gpu.preprocess import initialize, max_intensity_projection_and_downsample
 from euler_gpu.transform import transform_image_3d, translate_along_z
 from tqdm import tqdm
-from utils import locate_directory, calculate_gncc, filter_and_crop, get_image_T, get_image_CM
-import SimpleITK as sitk
+from utils import locate_dataset, calculate_gncc, filter_and_crop, get_image_T, get_image_CM
 import glob
 import h5py
 import json
@@ -12,13 +11,9 @@ import os
 import torch
 
 
-jl = Julia(compiled_modules=False)
-jl.eval('include("adjust.jl")')
-adjust_image_size = jl.eval("adjust_image_cm")
+def resize_images(save_directory):
 
-def resize_images(save_directory, registration_problem_file_path):
-
-    with open(registration_problem_file_path, 'r') as f:
+    with open("resources/registration_problems.json", 'r') as f:
         registration_problem_dict = json.load(f)
 
     for dataset_type_n_name, problems in registration_problem_dict.items():
@@ -36,7 +31,7 @@ def resize_images(save_directory, registration_problem_file_path):
         hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
         hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
 
-        dataset_path = locate_directory(dataset_name)
+        dataset_path = locate_dataset(dataset_name)
 
         for problem in tqdm(problems):
 
@@ -72,12 +67,16 @@ def resize_images(save_directory, registration_problem_file_path):
 
 def euler_transform_images(
                save_directory,
-               registration_problem_file_path,
                downsample_factor,
                batch_size,
                device_name):
 
-    with open(registration_problem_file_path, 'r') as f:
+    # dictionary that saves the CM of each problem in the test set
+    CM_dict = dict()
+    # dictionary that saves the Euler parameters for test problems
+    euler_parameters_dict = dict()
+
+    with open("resources/registration_problems.json", 'r') as f:
         registration_problem_dict = json.load(f)
 
     x_dim = 208
@@ -178,25 +177,27 @@ def euler_transform_images(
 
     outcomes = dict()
 
-    for dataset_type_n_name, problems in registration_problem_dict.items():
+    for dataset_name, problems in registration_problem_dict["test"].items():
     #for dataset_type_n_name, problems in {'train/2022-01-09-01':
     #        ['102to675']}.items():
 
-        dataset_type, dataset_name = dataset_type_n_name.split('/')
+        dataset_type = "test"
+        #dataset_type, dataset_name = dataset_type_n_name.split('/')
         save_path = f'{save_directory}/{dataset_type}/{dataset_name}'
 
         if not os.path.exists(save_path):
             os.mkdir(save_path)
-
+        """
         hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
         hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
-
-        dataset_path = locate_directory(dataset_name)
+        """
+        dataset_path = locate_dataset(dataset_name)
 
         for problem in tqdm(problems):
 
             problem_id = f"{dataset_name}/{problem}"
             outcomes[problem_id] = dict()
+            euler_parameters_dict[problem_id] = dict()
 
             t_moving, t_fixed = problem.split('to')
             t_moving_4 = t_moving.zfill(4)
@@ -212,6 +213,11 @@ def euler_transform_images(
             fixed_image_median = np.median(fixed_image_T)
             moving_image_T = get_image_T(moving_image_path)
             moving_image_median = np.median(moving_image_T)
+
+            CM_dict[problem_id] =[
+                    get_image_CM(moving_image_T),
+                    get_image_CM(fixed_image_T)
+            ]
 
             resized_fixed_image_xyz = filter_and_crop(fixed_image_T,
                         fixed_image_median, target_dim)
@@ -258,6 +264,11 @@ def euler_transform_images(
             best_score_xy, best_transformation_xy = grid_search(memory_dict_xy)
             outcomes[problem_id]["registered_image_xyz_gncc_xy"] = best_score_xy.item()
 
+            euler_parameters_dict[problem_id]["xy"] = [
+                    score.item() for score in list(best_transformation_xy)
+            ]
+            print(best_transformation_xy)
+            print(euler_parameters_dict[problem_id]["xy"])
             #print(f"x-y score (best): {best_score_xy}")
             #print(f"best_transformation_xy: {best_transformation_xy}")
 
@@ -337,6 +348,9 @@ def euler_transform_images(
             #print(f"best_transformation_xz: {best_transformation_xz}")
 
             outcomes[problem_id]["x-z_score_best"] = best_score_xz.item()
+            euler_parameters_dict[problem_id]["xz"] = [
+                    score.item() for score in list(best_transformation_xz)
+            ]
 
             # transform the 3d image with the searched parameters
 
@@ -403,6 +417,9 @@ def euler_transform_images(
 
             best_score_yz, best_transformation_yz = grid_search(memory_dict_yz)
             outcomes[problem_id]["y-z_score_best"] = best_score_yz.item()
+            euler_parameters_dict[problem_id]["yz"] = [
+                    score.item() for score in list(best_transformation_yz)
+            ]
             #print(f"y-z score (best): {best_score_yz}")
             #print(f"best_transformation_yz: {best_transformation_yz}")
 
@@ -443,6 +460,7 @@ def euler_transform_images(
                         np.transpose(transformed_moving_image_yzx, (2, 0, 1)),
                         moving_image_median
             )
+            euler_parameters_dict[problem_id]["dz"] = dz
 
             final_score = calculate_gncc(
                         resized_fixed_image_xyz,
@@ -451,31 +469,40 @@ def euler_transform_images(
             print(f"final_score: {final_score}")
 
             # write dataset to .hdf5 file
-
+            """
             hdf5_m_file.create_dataset(f'{t_moving}to{t_fixed}',
                     data = final_moving_image_xyz)
             hdf5_f_file.create_dataset(f'{t_moving}to{t_fixed}',
                     data = resized_fixed_image_xyz)
-
+            """
+        """
         hdf5_m_file.close()
         hdf5_f_file.close()
+        """
 
-    with open(f"eulergpu_outcomes.json", "w") as f:
-        json.dump(outcomes, f, indent=4)
+    write_to_json(outcomes, "eulergpu_outcomes")
+    write_to_json(CM_dict, "center_of_mass")
+    write_to_json(euler_parameters_dict, "euler_parameters")
+
+
+def write_to_json(input_, output_file):
+
+    with open(f"resources/{output_file}.json", "w") as f:
+        json.dump(input_, f, indent=4)
+
+    print(f"{output_file} written under resources.")
 
 
 if __name__ == "__main__":
 
-    save_directory = "/home/alicia/data_personal/regnet_dataset/euler-gpu_size-v1"
-    registration_problem_file_path = "/home/alicia/notebook/register/jungsoo_registration_problems.json"
+    save_directory = "/home/alicia/data_personal/regnet_dataset/temp"
     downsample_factor = 1
     batch_size = 200
     device_name = torch.device("cuda:1")
-    """
+
     euler_transform_images(
                save_directory,
-               registration_problem_file_path,
                downsample_factor,
                batch_size,
                device_name)
-    """
+

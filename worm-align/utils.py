@@ -1,13 +1,15 @@
 from julia.api import Julia
 from scipy import ndimage
+import SimpleITK as sitk
 import numpy as np
 import os
+
 
 jl = Julia(compiled_modules=False)
 jl.eval('include("adjust.jl")')
 adjust_image_size = jl.eval("adjust_image_cm")
 
-def locate_directory(dataset_date):
+def locate_dataset(dataset_date):
 
     '''
     Given the date when the dataset was collected, this function locates which
