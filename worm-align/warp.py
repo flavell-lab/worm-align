@@ -104,7 +104,6 @@ def resize_image_roi(image_roi_path: str, image_CM: list[int]):
 
 
 def euler_transform_image_roi(moving_image_roi: NDArray[np.int_],
-                ddf_array: NDArray[np.float_],
                 problem_id: str,
                 device_name: int) -> NDArray[np.float_]:
 
