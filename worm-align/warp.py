@@ -19,12 +19,16 @@ with open("resources/center_of_mass.json", "r") as f:
 with open("resources/euler_parameters.json", "r") as f:
     EULER_PARAMETERS_DICT = json.load(f)
 
+with open(f"resources/problem_to_pairnum.json", "r") as f:
+    PAIR_NUM_DICT = json.load(f)
 
 def warp_channel_image(ddf_directory: str,
                        dataset_name: str,
                        registration_problem: str) -> NDArray[np.float_]:
 
-    pair_num = get_pair_num(dataset_name, registration_problem)
+    problem_id = f"{dataset_name}/{registration_problem}"
+    pair_num = PAIR_NUM_DICT[problem_id]
+    #pair_num = get_pair_num(dataset_name, registration_problem)
     network_outputs_path = f"{ddf_directory}/test/pair_{pair_num}"
     ddf_nii_path = f"{network_outputs_path}/ddf.nii.gz"
     ddf_array = nib.load(ddf_nii_path).get_fdata()
@@ -47,7 +51,9 @@ def warp_image_roi(ddf_directory: str,
                    dataset_name: str,
                    registration_problem: str) -> NDArray[np.float_]:
 
-    pair_num = get_pair_num(dataset_name, registration_problem)
+    problem_id = f"{dataset_name}/{registration_problem}"
+    pair_num = PAIR_NUM_DICT[problem_id]
+    #pair_num = get_pair_num(dataset_name, registration_problem)
     network_outputs_path = f"{ddf_directory}/test/pair_{pair_num}"
     ddf_nii_path = f"{network_outputs_path}/ddf.nii.gz"
     ddf_array = nib.load(ddf_nii_path).get_fdata()
@@ -59,7 +65,6 @@ def warp_image_roi(ddf_directory: str,
     moving_image_roi_path = \
             f"{nrrd_images_path}/img_roi_watershed/{t_moving}.nrrd"
 
-    problem_id = f"{dataset_name}/{registration_problem}"
     resized_fixed_image_roi = resize_image_roi(
                 fixed_image_roi_path,
                 CM_DICT[problem_id][1])
@@ -70,7 +75,6 @@ def warp_image_roi(ddf_directory: str,
     # warp the moving image roi with euler parameters
     euler_warped_moving_image_roi = euler_transform_image_roi(
                 resized_moving_image_roi,
-                ddf_array,
                 problem_id,
                 device_name)
     # warp the moving image roi with ddf
@@ -86,13 +90,13 @@ def warp_image_roi(ddf_directory: str,
 
     return resized_fixed_image_roi, resized_moving_image_roi, euler_warped_moving_image_roi, warped_moving_image_roi
 
-
+'''
 def get_pair_num(dataset_name: str, registration_problem: str):
 
     problems = ALL_PROBLEMS["test"][dataset_name]
 
     return problems.index(registration_problem)
-
+'''
 
 def resize_image_roi(image_roi_path: str, image_CM: list[int]):
 
