@@ -29,15 +29,6 @@ def locate_dataset(dataset_date):
     raise Exception(f'Dataset {dataset_date} cannot be founed.')
 
 
-def calculate_gncc(fixed, moving):
-
-    mu_f = np.mean(fixed)
-    mu_m = np.mean(moving)
-    a = np.sum(abs(fixed - mu_f) * abs(moving - mu_m))
-    b = np.sqrt(np.sum((fixed - mu_f) ** 2) * np.sum((moving - mu_m) ** 2))
-    return a / b
-
-
 def filter_and_crop(image_T, image_median, target_dim):
 
     filtered_image_CM = get_image_CM(image_T)
