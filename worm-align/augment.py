@@ -1,10 +1,11 @@
+from tqdm import tqdm
+import h5py
 import numpy as np
 import random
+import os
 
 
-GLOBAL_RANDOM_STATE = np.random.RandomState(47)
-
-class RandomRotate90:
+class RandomRotate:
     """
     Rotate an array by 90 degrees around a randomly chosen plane. Image can be
     either 3D (DxHxW) or 4D (CxDxHxW).
@@ -16,7 +17,7 @@ class RandomRotate90:
     (1,2) axis)
     """
 
-    def __init__(self, random_state, axes=[(1,2)], force_180=False, **kwargs):
+    def __init__(self, random_state, axes=[(1,2)],  **kwargs):
 
         self.random_state = random_state
         if axes is None:
@@ -24,7 +25,6 @@ class RandomRotate90:
         else:
             assert isinstance(axes, list) and len(axes) > 0
         self.axes = axes
-        self.force_180 = force_180
 
     def __call__(self, image):
 
@@ -42,3 +42,71 @@ class RandomRotate90:
         return image
 
 
+def augment(image_dir, dataset_names, random_seed=88):
+
+    rotate180 = RandomRotate(np.random.RandomState(random_seed))
+
+    for dataset_name in dataset_names:
+
+        h5_m_file = h5py.File(
+                f"{image_dir}/nonaugmented/{dataset_name}/moving_images.h5", "r")
+        h5_f_file = h5py.File(
+                f"{image_dir}/nonaugmented/{dataset_name}/fixed_images.h5", "r")
+        problems = list(h5_m_file.keys())
+
+        augmented_image_dir = f"{image_dir}/augmented/{dataset_name}"
+        if not os.path.exists(augmented_image_dir):
+            os.mkdir(augmented_image_dir)
+
+        h5_aug_m_file = h5py.File(f"{augmented_image_dir}/moving_images.h5", "w")
+        h5_aug_f_file = h5py.File(f"{augmented_image_dir}/fixed_images.h5", "w")
+
+        x_dim, y_dim, z_dim = h5_m_file[problems[0]][:].shape
+
+        for problem in tqdm(problems):
+
+            moving_image = h5_m_file[problem][:]
+            fixed_image = h5_f_file[problem][:]
+
+            x_dim, y_dim, z_dim = fixed_image.shape
+            rotated_moving_image = adjust_shape(
+                        rotate180(moving_image),
+                        (x_dim, y_dim, z_dim))
+            rotated_fixed_image = adjust_shape(
+                        rotate180(fixed_image),
+                        (x_dim, y_dim, z_dim))
+
+            h5_aug_m_file.create_dataset(problem, data = rotated_moving_image)
+            h5_aug_f_file.create_dataset(problem, data = rotated_fixed_image)
+
+        h5_aug_m_file.close()
+        h5_aug_f_file.close()
+
+
+def adjust_shape(image, target_shape):
+
+    x_dim, y_dim, z_dim = target_shape
+
+    if image.shape == (x_dim, z_dim, y_dim):
+        image = np.transpose(image, (0, 2, 1))
+    elif image.shape == (y_dim, x_dim, z_dim):
+        image = np.transpose(image, (1, 0, 2))
+    elif image.shape == (y_dim, z_dim, x_dim):
+        image = np.transpose(image, (2, 0, 1))
+    elif image.shape == (z_dim, y_dim, x_dim):
+        image = np.transpose(image, (2, 1, 0))
+    elif image.shape == (z_dim, x_dim, y_dim):
+        image = np.transpose(image, (1, 2, 0))
+
+    return image
+
+
+if __name__ == "__main__":
+
+    image_dir = \
+    "/home/alicia/data_personal/regnet_dataset/euler-gpu_size-v1/train"
+    #dataset_names = ["2022-01-17-01", "2022-01-23-04",
+    #        "2022-01-27-01", "2022-01-27-04", "2022-03-16-02", "2022-06-14-01",
+    #        "2022-06-28-01", "2022-07-15-06"]
+    dataset_names = ["2022-01-09-01"]
+    #augment(image_dir, dataset_names)
