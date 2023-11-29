@@ -1,15 +1,45 @@
 from euler_gpu.grid_search import grid_search
 from euler_gpu.preprocess import initialize, max_intensity_projection_and_downsample
 from euler_gpu.transform import transform_image_3d, translate_along_z
-from evaluate import calculate_gncc
 from tqdm import tqdm
-from utils import locate_dataset, filter_and_crop, get_image_T, get_image_CM
+from wormalign.evaluate import calculate_gncc
+from wormalign.utils import (locate_dataset, filter_and_crop,
+    get_image_T, get_image_CM)
 import glob
 import h5py
 import json
 import numpy as np
 import os
 import torch
+
+
+def generate_registration_problems(train_dataset_names,
+                valid_dataset_names,
+                test_dataset_names):
+
+    output_dict = {"train": dict(), "valid": dict(), "test": dict()}
+    for dataset_name in train_dataset_names:
+        lines = open(
+            f"{locate_dataset(dataset_name)}/registration_problems.txt",
+            "r").readlines()
+        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+                for line in lines]
+
+    for dataset_name in valid_dataset_names:
+        lines = open(
+            f"{locate_dataset(dataset_name)}/registration_problems.txt",
+            "r").readlines()
+        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+                for line in lines]
+
+    for dataset_name in test_dataset_names:
+        lines = open(
+            f"{locate_dataset(dataset_name)}/registration_problems.txt",
+            "r").readlines()
+        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+                for line in lines]
+
+    write_to_json(output_dict, "registration_problems")
 
 
 def generate_resized_images(save_directory):
