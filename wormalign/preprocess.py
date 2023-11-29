@@ -22,21 +22,21 @@ def generate_registration_problems(train_dataset_names,
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
-        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+        output_dict["train"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
     for dataset_name in valid_dataset_names:
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
-        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+        output_dict["valid"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
     for dataset_name in test_dataset_names:
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
-        output_dict[dataset_name] = [line.strip().replace(" ", "to")
+        output_dict["test"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
     write_to_json(output_dict, "registration_problems")
