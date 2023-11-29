@@ -137,12 +137,15 @@ if __name__ == "__main__":
               cuda_device,
               checkpoint=None)
     """
+    """
     dataset_directory = "/home/alicia/data_personal/test_preprocess"
     train_datasets = ["2022-01-09-01", "2022-01-23-04"]
     valid_datasets = ["2022-07-26-01", "2022-07-20-01"]
     test_datasets = ["2022-08-02-01", "2022-04-18-04"]
     image_dimension = [208, 96, 56]
     outfile_path = "configs/test_config.yaml"
+    """
+    """
     write_config_file(dataset_directory,
                    train_datasets,
                    valid_datasets,
@@ -151,3 +154,17 @@ if __name__ == "__main__":
                    outfile_path,
                    max_epochs=300,
                    save_period=1)
+    """
+    config_file_path = "/home/alicia/notebook/worm-align/worm-align/configs/config_euler-gpu-ddf_resize-v1_size-v1.yaml"
+    log_directory = "/home/alicia/data_personal/regnet_ckpt"
+    experiment_name = "euler-gpu_resize-v1_size-v1_aug-v1_reg-nonrigid-w0.02"
+    cuda_device = "3"
+
+    #configs_home = "/home/alicia/notebook/register/configs"
+    #config_file_path = f"{configs_home}/config_euler-gpu-ddf_resize-v1_size-v1.yaml"
+    #experiment_name = "euler-gpu_resize-v1_size-v1_aug-affine"
+    train_ddf(config_file_path,
+              log_directory,
+              experiment_name,
+              cuda_device)
+
