@@ -1,7 +1,8 @@
 from euler_gpu.preprocess import initialize
 from euler_gpu.transform import transform_image_3d
 from numpy.typing import NDArray
-from utils import locate_dataset, get_cropped_image, get_image_T, get_image_CM
+from wormalign.utils import (locate_dataset, get_cropped_image, 
+    get_image_T, get_image_CM)
 import deepreg.model.layer as layer
 import json
 import nibabel as nib
