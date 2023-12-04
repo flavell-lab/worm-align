@@ -1,14 +1,23 @@
 from wormalign.preprocess import generate_pregistered_images
 import argparse
 
+
 def execute(args):
 
+    # generate registration problems
+    generate_registration_problems(
+            args.train_datasets,
+            args.valid_datasets,
+            args.test_datasets
+    )
     # generate and write preregistered images in HDF5
     generate_pregistered_images(
                 tuple(args.shape),
                 args.path,
                 args.batchsize,
-                args.device)
+                args.device
+    )
+    # generate configuration file for the DDF network
 
 
 if __name__ == "__main__":
@@ -26,4 +35,14 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--device", type=str, nargs=1,
                 metavar="device_name",
                 help="CUDA device name")
-    #parser.add_argument()
+    parser.add_argument("-train", "--train_datasets", type=str, nargs="+",
+                metavar="datasets for training",
+                help="enter names of training datasets")
+    parser.add_argument("-valid", "--valid_datasets", type=str, nargs="+",
+                metavar="datasets for validation",
+                help="enter names of validation datasets")
+    parser.add_argument("-test", "--test_datasets", type=str, nargs="+",
+                metavar="datasets for testing",
+                help="enter names of test datasets")
+    args = parser.parse_args()
+    execute(args)
