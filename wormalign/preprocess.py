@@ -18,28 +18,28 @@ def generate_registration_problems(train_dataset_names,
                 test_dataset_names):
 
     output_dict = {"train": dict(), "valid": dict(), "test": dict()}
-    for dataset_name in train_dataset_names:
+    for dataset_name in tqdm(train_dataset_names):
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
         output_dict["train"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
-    for dataset_name in valid_dataset_names:
+    for dataset_name in tqdm(valid_dataset_names):
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
         output_dict["valid"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
-    for dataset_name in test_dataset_names:
+    for dataset_name in tqdm(test_dataset_names):
         lines = open(
             f"{locate_dataset(dataset_name)}/registration_problems.txt",
             "r").readlines()
         output_dict["test"][dataset_name] = [line.strip().replace(" ", "to")
                 for line in lines]
 
-    write_to_json(output_dict, "registration_problems")
+    write_to_json(output_dict, "registration_problems_test")
 
 
 def generate_resized_images(save_directory):
@@ -517,10 +517,18 @@ if __name__ == "__main__":
     downsample_factor = 1
     batch_size = 200
     device_name = torch.device("cuda:1")
-
+    train_dataset_names = ["2022-01-09-01", "2022-01-23-04", "2022-01-27-04",
+            "2022-06-14-01", "2022-07-15-06", "2022-01-17-01", "2022-01-27-01",
+            "2022-03-16-02", "2022-06-28-01"]
+    valid_dataset_names = ["2022-02-16-04", "2022-04-05-01", "2022-07-20-01",
+            "2022-03-22-01", "2022-04-12-04", "2022-07-26-01"]
+    test_dataset_names = ["2022-04-14-04", "2022-04-18-04", "2022-08-02-01"]
+    """
+    generate_registration_problems(train_dataset_names, valid_dataset_names,
+            test_dataset_names)
     generate_pregistered_images(
                save_directory,
                downsample_factor,
                batch_size,
                device_name)
-
+    """
