@@ -10,38 +10,65 @@ import h5py
 import json
 import numpy as np
 import os
+import random
 import torch
 
 
-def generate_registration_problems(train_dataset_names,
-                valid_dataset_names,
-                test_dataset_names):
+def generate_registration_problems(dataset_dict):
 
-    output_dict = {#"train": dict(), "valid": dict(),
-            "test": dict()}
     """
-    for dataset_name in tqdm(train_dataset_names):
-        lines = open(
-            f"{locate_dataset(dataset_name)}/registration_problems.txt",
-            "r").readlines()
-        output_dict["train"][dataset_name] = [line.strip().replace(" ", "to")
-                for line in lines]
+    Takes in dictionary that lists datasets used for training, validation and
+    testing and outputs a json file that contains sampled registration problems
 
-    for dataset_name in tqdm(valid_dataset_names):
-        lines = open(
-            f"{locate_dataset(dataset_name)}/registration_problems.txt",
-            "r").readlines()
-        output_dict["valid"][dataset_name] = [line.strip().replace(" ", "to")
-                for line in lines]
+    Args:
+        dataset_dict: dataset dictionary formated as follows:
+            {"train": ["YYYY-MM-DD-X"],
+             "valid": ["YYYY-MM-DD-X"]
+             "test": ["YYYY-MM-DD-X"]
+            }
+    """
+    output_dict = {"train": dict(), "valid": dict(),
+            "test": dict()}
 
-    for dataset_name in tqdm(test_dataset_names):
-        lines = open(
-            f"{locate_dataset(dataset_name)}/registration_problems.txt",
-            "r").readlines()
-        output_dict["test"][dataset_name] = [line.strip().replace(" ", "to")
-                for line in lines]
+    for dataset_type, dataset_names in dataset_dict.items():
 
-    write_to_json(output_dict, "registration_problems_gfp")
+        for dataset_name in tqdm(dataset_names):
+            lines = open(
+                f"{locate_dataset(dataset_name)}/registration_problems.txt",
+                "r").readlines()
+            problems = [line.strip().replace(" ", "to")
+                    for line in lines]
+            sampled_problems = sample_registration_problems(problems)
+            output_dict[dataset_type][dataset_name] = sampled_problems
+
+    write_to_json(output_dict, "registration_problems_ALv0")
+
+
+def sample_registration_problems(problems):
+
+    interval_to_problems_dict = dict()
+
+    for problem in problems:
+
+        interval = abs(int(problem.split("to")[0]) -
+                int(problem.split("to")[1]))
+        if interval not in interval_to_problems_dict.keys():
+            interval_to_problems_dict[interval] = [problem]
+        else:
+            interval_to_problems_dict[interval].append(problem)
+
+    cutoff = 600
+
+    sampled_problems = []
+
+    for interval, problems in interval_to_problems_dict.items():
+        if interval > 400:
+            sampled_problems += problems
+        else:
+            sampled_problems += random.sample(
+                    problems, int(0.5 * len(problems)))
+
+    return sampled_problems
 
 
 def generate_resized_images(save_directory):
@@ -694,14 +721,20 @@ if __name__ == "__main__":
             "2022-03-16-02", "2022-06-28-01"]
     valid_dataset_names = ["2022-02-16-04", "2022-04-05-01", "2022-07-20-01",
             "2022-03-22-01", "2022-04-12-04", "2022-07-26-01"]
-    #test_dataset_names = ["2022-04-14-04", "2022-04-18-04", "2022-08-02-01"]
-    test_dataset_names = ["2022-01-06-01", "2022-01-06-02"]
+    test_dataset_names = ["2022-04-14-04", "2022-04-18-04", "2022-08-02-01"]
+    #test_dataset_names = ["2022-01-06-01", "2022-01-06-02"]
     target_image_shape = (208, 96, 56)
-    """generate_pregistered_images(
-               target_image_shape,
-               "datasets",
-               batch_size,
-               device_name)"""
-    generate_transformed_gfp_images(target_image_shape)
-    #generate_registration_problems(train_dataset_names, valid_dataset_names,
-    #        test_dataset_names)
+    #generate_resized_images("datasets")
+    #generate_pregistered_images(
+    #           target_image_shape,
+    #           "datasets",
+    #           batch_size,
+    #           device_name)
+    #generate_transformed_gfp_images(target_image_shape)
+
+    dataset_dict = {
+            "train": train_dataset_names + ["2023-08-07-01", "2023-08-25-02"],
+            "valid": valid_dataset_names + ["2023-08-07-16"],
+            "test": test_dataset_names
+    }
+    generate_registration_problems(dataset_dict)
