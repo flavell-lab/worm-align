@@ -1,740 +1,419 @@
 from euler_gpu.grid_search import grid_search
-from euler_gpu.preprocess import initialize, max_intensity_projection_and_downsample
-from euler_gpu.transform import transform_image_3d, translate_along_z
+from euler_gpu.preprocess import (initialize,
+    max_intensity_projection_and_downsample)
+from euler_gpu.transform import (transform_image_3d, translate_along_z)
+from numpy.typing import NDArray
 from tqdm import tqdm
+from typing import List, Tuple
 from wormalign.evaluate import calculate_gncc
-from wormalign.utils import (locate_dataset, filter_and_crop,
-    get_image_T, get_image_CM, get_cropped_image, filter_image)
-import glob
+from wormalign.utils import (locate_dataset, filter_and_crop, get_image_T,
+        get_image_CM, get_cropped_image, filter_image)
 import h5py
-import json
 import numpy as np
 import os
 import random
 import torch
 
 
-def generate_registration_problems(dataset_dict):
-
+class RandomRotate:
     """
-    Takes in dictionary that lists datasets used for training, validation and
-    testing and outputs a json file that contains sampled registration problems
+    Rotate an array by 90 degrees around a randomly chosen plane. Image can be
+    either 3D (DxHxW) or 4D (CxDxHxW).
 
-    Args:
-        dataset_dict: dataset dictionary formated as follows:
-            {"train": ["YYYY-MM-DD-X"],
-             "valid": ["YYYY-MM-DD-X"]
-             "test": ["YYYY-MM-DD-X"]
-            }
+    When creating make sure that the provided RandomStates are consistent
+    between raw and labeled datasets, otherwise the models won't converge.
+
+    IMPORTANT: assumes DHW axis order (that's why rotation is performed across
+    (1,2) axis)
     """
-    output_dict = {"train": dict(), "valid": dict(),
-            "test": dict()}
 
-    for dataset_type, dataset_names in dataset_dict.items():
+    def __init__(
+        self,
+        random_state: int,
+        axes: List[Tuple[int, int]] = [(1,2)],
+        **kwargs,
+    ):
+        """
+        Init.
 
-        for dataset_name in tqdm(dataset_names):
-            lines = open(
-                f"{locate_dataset(dataset_name)}/registration_problems.txt",
-                "r").readlines()
-            problems = [line.strip().replace(" ", "to")
-                    for line in lines]
-            sampled_problems = sample_registration_problems(problems)
-            output_dict[dataset_type][dataset_name] = sampled_problems
-
-    write_to_json(output_dict, "registration_problems_ALv0")
-
-
-def sample_registration_problems(problems):
-
-    interval_to_problems_dict = dict()
-
-    for problem in problems:
-
-        interval = abs(int(problem.split("to")[0]) -
-                int(problem.split("to")[1]))
-        if interval not in interval_to_problems_dict.keys():
-            interval_to_problems_dict[interval] = [problem]
+        :param random_state: an integer as random seed
+        :param axes: axes of rotation
+        """
+        self.random_state = random_state
+        if axes is None:
+            axes = [(1, 0), (2, 1), (2, 0)]
         else:
-            interval_to_problems_dict[interval].append(problem)
+            assert isinstance(axes, list) and len(axes) > 0
+        self.axes = axes
 
-    cutoff = 600
+    def __call__(
+        self,
+        image: NDArray[np.float32]
+    ) -> NDArray[np.float32]:
+        """
+        Rotate image by 180 degrees probalistically.
 
-    sampled_problems = []
+        :param image: array of shape: (x_dim, y_dim, z_dim)
+        """
+        axis = self.axes[self.random_state.randint(len(self.axes))]
+        assert image.ndim in [3, 4], 'Supports only 3D (DxHxW) or 4D (CxDxHxW) images'
 
-    for interval, problems in interval_to_problems_dict.items():
-        if interval > 400:
-            sampled_problems += problems
+        k = self.random_state.choice([0, 2])
+        # rotate k times around a given plane
+        if image.ndim == 3:
+            image = np.rot90(image, k, axis)
         else:
-            sampled_problems += random.sample(
-                    problems, int(0.5 * len(problems)))
+            channels = [np.rot90(image[c], k, axis) for c in range(image.shape[0])]
+            image = np.stack(channels, axis=0)
 
-    return sampled_problems
+        return image
+
+    def _adjust_shape(
+        self,
+        image: NDArray[np.float32],
+        target_shape: Tuple[int, int, int],
+    ) -> NDArray[np.float32]:
+
+        x_dim, y_dim, z_dim = target_shape
+
+        if image.shape == (x_dim, z_dim, y_dim):
+            image = np.transpose(image, (0, 2, 1))
+        elif image.shape == (y_dim, x_dim, z_dim):
+            image = np.transpose(image, (1, 0, 2))
+        elif image.shape == (y_dim, z_dim, x_dim):
+            image = np.transpose(image, (2, 0, 1))
+        elif image.shape == (z_dim, y_dim, x_dim):
+            image = np.transpose(image, (2, 1, 0))
+        elif image.shape == (z_dim, x_dim, y_dim):
+            image = np.transpose(image, (1, 2, 0))
+
+        return image
+
+    def augment(
+        self,
+        image_dir: str, 
+        dataset_names: List[str],
+    ):
+        """
+        Generate a new set of images from the given datasets that are augmented
+        by rotation.
+
+        :param image_dir: directory to keep the new set of images as .h5 files
+        :param dataset_names: a list of dataset names
+
+        :example
+            >>> image_dir = "/home/alicia/data_personal"
+            >>> random_seed = 0
+            >>> rotate180 = RandomRotate(np.random.RandomState(random_seed))
+            >>> dataset_names = ["2022-01-09-01", "2022-01-17-01"]
+            >>> rotate180.augment(image_dir, dataset_names)
+        """
+        for dataset_name in dataset_names:
+
+            h5_m_file = h5py.File(
+                    f"{image_dir}/nonaugmented/{dataset_name}/moving_images.h5",
+                    "r")
+            h5_f_file = h5py.File(
+                    f"{image_dir}/nonaugmented/{dataset_name}/fixed_images.h5",
+                    "r")
+            problems = list(h5_m_file.keys())
+
+            augmented_image_dir = f"{image_dir}/augmented/{dataset_name}"
+            if not os.path.exists(augmented_image_dir):
+                os.mkdir(augmented_image_dir)
+
+            h5_aug_m_file = h5py.File(
+                    f"{augmented_image_dir}/moving_images.h5", "w")
+            h5_aug_f_file = h5py.File(
+                    f"{augmented_image_dir}/fixed_images.h5", "w")
+
+            x_dim, y_dim, z_dim = h5_m_file[problems[0]][:].shape
+
+            for problem in tqdm(problems):
+
+                moving_image = h5_m_file[problem][:]
+                fixed_image = h5_f_file[problem][:]
+
+                rotated_moving_image = self._adjust_shape(
+                            self.__call__(moving_image),
+                            fixed_image.shape)
+                rotated_fixed_image = self._adjust_shape(
+                            self.__call__(fixed_image),
+                            fixed_image.shape)
+
+                h5_aug_m_file.create_dataset(
+                        problem,
+                        data=rotated_moving_image)
+                h5_aug_f_file.create_dataset(
+                        problem,
+                        data=rotated_fixed_image)
+
+            h5_aug_m_file.close()
+            h5_aug_f_file.close()
 
 
-def generate_resized_images(save_directory):
+class RegistrationProcessor:
 
-    """
-    Generate and save resized images for registration problems.
+    def __init__(
+        self,
+        target_image_shape: Tuple[int, int, int],
+        save_directory: str,
+        batch_size: int = 200,
+        device_name: str = "cuda:2",
+        downsample_factor: int = 4,
+    ):
+        """
+        Init.
 
-    This function reads registration problems from a JSON file, processes them
-    by resizing the corresponding images, and saves the resized images in HDF5
-    files.
+        :param target_image_shape: shape of the image (x_dim, y_dim, z_dim)
+        :param save_directory: the directory to save the registered images
+        :param batch_size: the size of a batch to process with Euler-GPU
+        :param device name
+        :param downsample_factor: factor to downsample the images during grid
+            search stage of running Euler-GPU
+        """
+        self.target_image_shape = target_image_shape
+        self.save_directory = save_directory
+        self.batch_size = batch_size
+        self.device_name = torch.device(device_name)
+        self.downsample_factor = downsample_factor
 
-    Args:
-        save_directory (str): The directory where the resized images will be saved.
-    """
-    with open("resources/registration_problems.json", 'r') as f:
-        registration_problem_dict = json.load(f)
-    if not os.path.exists(save_directory):
-        os.mkdir(save_directory)
+        self.euler_parameters_dict = dict()
+        self.outcomes = dict()
+        self.CM_dict = dict()
+        self.memory_dict_xy, self._memory_dict_xy = \
+                self.initialize_memory_dict()
 
-    for dataset_type_n_name, problems in registration_problem_dict.items():
+        self._ensure_directory_exists(self.save_directory)
 
-        dataset_type, dataset_name = dataset_type_n_name.split('/')
-        save_path = f"{save_directory}/{dataset_type}/{dataset_name}"
+    def _ensure_directory_exists(self, path):
+        """
+        Create the given directory if it does not already exist
 
-        if not os.path.exists(f"{save_directory}/{dataset_type}"):
-            os.mkdir(f"{save_directory}/{dataset_type}")
-        if not os.path.exists(save_path):
-            os.mkdir(save_path)
+        :param path: directory to create if does not exist
+        """
+        if not os.path.exists(path):
+            os.mkdir(path)
 
-        hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
-        hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
-
-        dataset_path = locate_dataset(dataset_name)
-
-        for problem in tqdm(problems):
-
-            t_moving, t_fixed = problem.split('to')
-            t_moving_4 = t_moving.zfill(4)
-            t_fixed_4 = t_fixed.zfill(4)
-            fixed_image_path = glob.glob(
-                    f'{dataset_path}/NRRD_filtered/*_t{t_fixed_4}_ch2.nrrd'
-            )[0]
-            moving_image_path = glob.glob(
-                    f'{dataset_path}/NRRD_filtered/*_t{t_moving_4}_ch2.nrrd'
-            )[0]
-
-            fixed_image_T = get_image_T(fixed_image_path)
-            fixed_image_median = np.median(fixed_image_T)
-            moving_image_T = get_image_T(moving_image_path)
-            moving_image_median = np.median(moving_image_T)
-
-            target_image_shape = (208, 96, 56)
-            resized_fixed_image_xyz = filter_and_crop(fixed_image_T,
-                        fixed_image_median, target_image_shape)
-            resized_moving_image_xyz = filter_and_crop(moving_image_T,
-                        moving_image_median, target_image_shape)
-
-            hdf5_m_file.create_dataset(f'{t_moving}to{t_fixed}',
-                    data = resized_moving_image_xyz)
-            hdf5_f_file.create_dataset(f'{t_moving}to{t_fixed}',
-                    data = resized_fixed_image_xyz)
-
-        hdf5_m_file.close()
-        hdf5_f_file.close()
-
-
-def generate_pregistered_images(
-               target_image_shape,
-               save_directory="datasets",
-               batch_size=200,
-               device_name="cuda:0"):
-
-    """
-    Generate and save pre-registered images for given datasets.
-
-    This function reads registration problems from a JSON file, processes them
-    by registering the corresponding images with Euler transformation, and
-    saves the resized images in HDF5 files.
-
-    Args:
-        target_image_shape (tuple): the target shape of preregistered images
-        save_directory (str): the directory where the pre-registered images will be saved
-        downsample_factor (int): the factor of downsampling images
-        batch_size (int): the batch size for processing images
-        device_name (str): the name of the device (e.g.,'cuda:1')
-    """
-    # dictionary that saves the CM of each problem in the test set
-    CM_dict = dict()
-    # dictionary that saves the Euler parameters for test problems
-    euler_parameters_dict = dict()
-
-    with open("resources/registration_problems_gfp.json", 'r') as f:
-        registration_problem_dict = json.load(f)
-
-    downsample_factor = 4
-    x_dim, y_dim, z_dim = target_image_shape
-    z_translation_range = range(-z_dim, z_dim)
-    x_translation_range_xy = np.sort(np.concatenate((
+    def _initialize_memory_dict(self):
+        """
+        Initialize memory dictory for storing the parameters for running
+        Euler-GPU
+        """
+        x_dim, y_dim, z_dim = self.target_image_shape
+        z_translation_range = range(-z_dim, z_dim)
+        x_translation_range_xy = np.sort(np.concatenate((
                 np.linspace(-0.24, 0.24, 49),
                 np.linspace(-0.46, -0.25, 8),
                 np.linspace(0.25, 0.46, 8),
                 np.linspace(0.5, 1, 3),
-                np.linspace(-1, -0.5, 3))))
-    y_translation_range_xy = np.sort(np.concatenate((
+                np.linspace(-1, -0.5, 3)
+        )))
+        y_translation_range_xy = np.sort(np.concatenate((
                 np.linspace(-0.28, 0.28, 29),
                 np.linspace(-0.54, -0.3, 5),
                 np.linspace(0.3, 0.54, 5),
                 np.linspace(0.6, 1.4, 3),
-                np.linspace(-1.4, -0.6, 3))))
-    theta_rotation_range_xy = np.sort(np.concatenate((
+                np.linspace(-1.4, -0.6, 3)
+        )))
+        theta_rotation_range_xy = np.sort(np.concatenate((
                 np.linspace(0, 19, 20),
                 np.linspace(20, 160, 29),
                 np.linspace(161, 199, 39),
                 np.linspace(200, 340, 29),
-                np.linspace(341, 359, 19))))
+                np.linspace(341, 359, 19)
+        )))
+        memory_dict_xy = initialize(
+                    np.zeros((
+                        x_dim // downsample_factor, 
+                        y_dim // downsample_factor)).astype(np.float32),
+                    np.zeros((
+                        x_dim // downsample_factor,
+                        y_dim // downsample_factor)).astype(np.float32),
+                    x_translation_range_xy,
+                    y_translation_range_xy,
+                    theta_rotation_range_xy,
+                    self.batch_size,
+                    self.device_name
+        )
+        _memory_dict_xy = initialize(
+                    np.zeros((x_dim, y_dim)).astype(np.float32),
+                    np.zeros((x_dim, y_dim)).astype(np.float32),
+                    np.zeros(z_dim),
+                    np.zeros(z_dim),
+                    np.zeros(z_dim),
+                    self.z_dim,
+                    self.device_name
+        )
+        return memory_dict_xy, _memory_dict_xy
 
-    x_translation_range_xy = np.linspace(-1, 1, 100, dtype=np.float32)
-    y_translation_range_xy = np.linspace(-1, 1, 100, dtype=np.float32)
-    #theta_rotation_range_xy = np.linspace(0, 360, 360, dtype=np.float32)
+    def process_datasets(
+        self,
+        augment: bool = False,
+    ):
+        with open("resources/registration_problems.json", 'r') as f:
+            registration_problem_dict = json.load(f)
 
-    y_translation_range_yz = np.linspace(-0.1, 0.1, 11)
-    z_translation_range_yz = np.linspace(-1, 1, 51)
-    theta_rotation_range_yz = np.concatenate((
-                np.linspace(-40, -20, 5),
-                np.linspace(-19, 19, 39),
-                np.linspace(20, 40, 5)))
+        for dataset_type, problem_dict in registration_problem_dict.items():
 
-    x_translation_range_xz = np.linspace(-0.1, 0.1, 21)
-    z_translation_range_xz = np.linspace(-0.1, 0.1, 9)
-    theta_rotation_range_xz = np.concatenate((
-                np.linspace(-40, -20, 5),
-                np.linspace(-19, 19, 39),
-                np.linspace(20, 40, 5)))
+            # process training, validation, and testing datasets respectively
+            self.process_dataset_type(dataset_type, problem_dict)
 
-    memory_dict_xy = initialize(
-                np.zeros((
-                    x_dim // downsample_factor, 
-                    y_dim // downsample_factor)).astype(np.float32),
-                np.zeros((
-                    x_dim // downsample_factor,
-                    y_dim // downsample_factor)).astype(np.float32),
-                x_translation_range_xy,
-                y_translation_range_xy,
-                theta_rotation_range_xy,
-                batch_size,
-                device_name
-    )
-    _memory_dict_xy = initialize(
-                np.zeros((x_dim, y_dim)).astype(np.float32),
-                np.zeros((x_dim, y_dim)).astype(np.float32),
-                np.zeros(z_dim),
-                np.zeros(z_dim),
-                np.zeros(z_dim),
-                z_dim,
-                device_name
-    )
+        write_to_json(self.outcomes, "eulergpu_outcomes")
+        write_to_json(self.CM_dict, "center_of_mass")
+        write_to_json(self.euler_parameters_dict, "euler_parameters")
 
-    memory_dict_xz = initialize(
-                np.zeros((
-                    x_dim // downsample_factor,
-                    z_dim // downsample_factor)).astype(np.float32),
-                np.zeros((
-                    x_dim // downsample_factor,
-                    z_dim // downsample_factor)).astype(np.float32),
-                x_translation_range_xz,
-                z_translation_range_xz,
-                theta_rotation_range_xz,
-                batch_size,
-                device_name
-    )
-    _memory_dict_xz = initialize(
-                np.zeros((x_dim, z_dim)).astype(np.float32),
-                np.zeros((x_dim, z_dim)).astype(np.float32),
-                np.zeros(y_dim),
-                np.zeros(y_dim),
-                np.zeros(y_dim),
-                y_dim,
-                device_name
-    )
-    memory_dict_yz = initialize(
-                np.zeros((
-                    y_dim // downsample_factor,
-                    z_dim // downsample_factor)).astype(np.float32),
-                np.zeros((
-                    y_dim // downsample_factor,
-                    z_dim // downsample_factor)).astype(np.float32),
-                y_translation_range_yz,
-                z_translation_range_yz,
-                theta_rotation_range_yz,
-                batch_size,
-                device_name
-    )
-    _memory_dict_yz = initialize(
-                np.zeros((y_dim, z_dim)).astype(np.float32),
-                np.zeros((y_dim, z_dim)).astype(np.float32),
-                np.zeros(x_dim),
-                np.zeros(x_dim),
-                np.zeros(x_dim),
-                x_dim,
-                device_name
-    )
+    def process_dataset_type(
+        self,
+        dataset_type: str,
+        problem_dict: Dict[str, List[str]],
+    ):
+        """
+        Process datasets that belong to the same type
 
-    outcomes = dict()
+        :param dataset_type: the type of dataset
+            (i.e., `train`, `valid`, or `test`)
+        :param problem_dict: a dictionary of problems for each dataset as
+            {
+                "YYYY-MM-DD-XX": [xtox, ..],
+                "YYYY-MM-DD-XX": [xtox, ..],
+                ...
+            }
+        """
+        dataset_type_dir = f"{self.save_directory}/{dataset_type}"
+        self._ensure_directory_exists(dataset_type_dir)
+        #self._ensure_directory_exists(f"{dataset_type_dir}/nonaugmented")
+        for dataset_name, problems in problem_dict.items():
+            print(f"=====Processing {dataset_name} in {dataset_type}=====")
+            self.process_dataset(dataset_name, problems, dataset_type_dir)
 
-    if not os.path.exists(save_directory):
-        os.mkdir(save_directory)
+    def process_dataset(
+        self,
+        dataset_name: str,
+        problems: List[str],
+        dataset_type_dir: str,
+    ):
+        """
+        Process a given dataset with Euler transformation.
 
-    #for dataset_type, problem_dict in registration_problem_dict.items():
-    for dataset_name, problems in registration_problem_dict["test"].items():
-
-        dataset_type = "test"
-        if not os.path.exists(f"{save_directory}/{dataset_type}"):
-            os.mkdir(f"{save_directory}/{dataset_type}")
-
-        if not os.path.exists(f"{save_directory}/{dataset_type}/nonaugmented"):
-            os.mkdir(f"{save_directory}/{dataset_type}/nonaugmented")
-
-        #for dataset_name, problems in problem_dict.items():
-        save_path = \
-            f"{save_directory}/{dataset_type}/nonaugmented/{dataset_name}"
-        if not os.path.exists(save_path):
-            os.mkdir(save_path)
-
+        :param dataset_name: name of the dataset
+        :param problems: a list of problems from this dataset
+        :param dataset_type_dir: directory to save the processed dataset
+        """
+        save_path = f"{dataset_type_dir}/{dataset_name}"
+        self._ensure_directory_exists(save_path)
         hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
         hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
-
         dataset_path = locate_dataset(dataset_name)
-        print(f"=====Processing {dataset_name} in {dataset_type}=====")
-        for problem in tqdm(problems[:100]):
 
+        for problem in tqdm(problems):
             problem_id = f"{dataset_name}/{problem}"
-            outcomes[problem_id] = dict()
-            euler_parameters_dict[problem_id] = dict()
-            t_moving, t_fixed = problem.split('to')
-            t_moving_4 = t_moving.zfill(4)
-            t_fixed_4 = t_fixed.zfill(4)
-            fixed_image_path = glob.glob(
-                    f'{dataset_path}/NRRD_filtered/*_t{t_fixed_4}_ch2.nrrd'
-            )[0]
-            moving_image_path = glob.glob(
-                    f'{dataset_path}/NRRD_filtered/*_t{t_moving_4}_ch2.nrrd'
-            )[0]
-
-            fixed_image_T = get_image_T(fixed_image_path)
-            fixed_image_median = np.median(fixed_image_T)
-            moving_image_T = get_image_T(moving_image_path)
-            moving_image_median = np.median(moving_image_T)
-
-            CM_dict[problem_id] =[
-                    get_image_CM(moving_image_T),
-                    get_image_CM(fixed_image_T)
-            ]
-
-            resized_fixed_image_xyz = filter_and_crop(fixed_image_T,
-                        fixed_image_median, target_image_shape)
-
-            # prepare reshaped fixed images for later use
-            resized_fixed_image_xzy = np.transpose(resized_fixed_image_xyz,
-                        (0, 2, 1))
-            resized_fixed_image_yzx = np.transpose(resized_fixed_image_xyz,
-                        (1, 2, 0))
-            resized_moving_image_xyz = filter_and_crop(moving_image_T,
-                        moving_image_median, target_image_shape)
-
-            #########################################
-            #########################################
-            #########################################
-
-            # project onto the x-y plane along the maximum z
-            downsampled_resized_fixed_image_xy = \
-                    max_intensity_projection_and_downsample(
-                            resized_fixed_image_xyz,
-                            downsample_factor,
-                            projection_axis=2).astype(np.float32)
-            downsampled_resized_moving_image_xy = \
-                    max_intensity_projection_and_downsample(
-                            resized_moving_image_xyz,
-                            downsample_factor,
-                            projection_axis=2).astype(np.float32)
-
-            # update the memory dictionary for grid search on x-y image
-            memory_dict_xy["fixed_images_repeated"][:] = torch.tensor(
-                    downsampled_resized_fixed_image_xy,
-                    device=device_name,
-                    dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-            memory_dict_xy["moving_images_repeated"][:] = torch.tensor(
-                    downsampled_resized_moving_image_xy,
-                    device=device_name,
-                    dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-
-            # search optimal parameters with projected image on the x-y plane
-            best_score_xy, best_transformation_xy = grid_search(memory_dict_xy)
-            outcomes[problem_id]["registered_image_xyz_gncc_xy"] = best_score_xy.item()
-
-            euler_parameters_dict[problem_id]["xy"] = [
-                    score.item() for score in list(best_transformation_xy)
-            ]
-
-            # transform the 3d image with the searched parameters
-            transformed_moving_image_xyz = transform_image_3d(
-                        resized_moving_image_xyz,
-                        _memory_dict_xy,
-                        best_transformation_xy,
-                        device_name
+            self.process_problem(
+                    problem_id,
+                    dataset_path,
+                    hdf5_m_file,
+                    hdf5_f_file
             )
+        hdf5_m_file.close()
+        hdf5_f_file.close()
 
-            registered_image_xyz_gncc_yz = calculate_gncc(
+    def process_problem(
+        self,
+        problem_id: str,
+        dataset_path: str,
+        hdf5_m_file: h5py.File,
+        hdf5_f_file: h5py.File,
+    ):
+        """
+        Euler-transform the moving image from a given registration problem.
+
+        :param problem_id: ID that identifies the dataset name and problem name
+        :param dataset_path: the path to save the dataset
+        :param hdf5_m_file: hdf5 File that keeps the moving images
+        :param hdf5_f_file: hdf5 File that keeps the fixed images
+        """
+        self.outcomes[problem_id] = dict()
+        self.euler_parameters_dict[problem_id] = dict()
+
+        t_moving, t_fixed = problem.split('to')
+        t_moving_4 = t_moving.zfill(4)
+        t_fixed_4 = t_fixed.zfill(4)
+        fixed_image_path = glob.glob(
+                f'{dataset_path}/NRRD_filtered/*_t{t_fixed_4}_ch2.nrrd'
+        )[0]
+        moving_image_path = glob.glob(
+                f'{dataset_path}/NRRD_filtered/*_t{t_moving_4}_ch2.nrrd'
+        )[0]
+        fixed_image_T = get_image_T(fixed_image_path)
+        fixed_image_median = np.median(fixed_image_T)
+        moving_image_T = get_image_T(moving_image_path)
+        moving_image_median = np.median(moving_image_T)
+
+        resized_fixed_image_xyz = filter_and_crop(
+                fixed_image_T,
+                fixed_image_median,
+                target_image_shape
+        )
+        # project onto the x-y plane along the maximum z
+        downsampled_resized_fixed_image_xy = \
+                max_intensity_projection_and_downsample(
+                        resized_fixed_image_xyz,
+                        downsample_factor,
+                        projection_axis = 2).astype(np.float32)
+        downsampled_resized_moving_image_xy = \
+                max_intensity_projection_and_downsample(
+                        resized_moving_image_xyz,
+                        downsample_factor,
+                        projection_axis = 2).astype(np.float32)
+
+        # update the memory dictionary for grid search on x-y image
+        self.memory_dict_xy["fixed_images_repeated"][:] = torch.tensor(
+                downsampled_resized_fixed_image_xy,
+                device = self.device_name,
+                dtype = torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        self.memory_dict_xy["moving_images_repeated"][:] = torch.tensor(
+                downsampled_resized_moving_image_xy,
+                device = self.device_name,
+                dtype = torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+
+        # search optimal parameters with projected image on the x-y plane
+        best_score_xy, best_transformation_xy = grid_search(memory_dict_xy)
+        # transform the 3d image with the searched parameters
+        transformed_moving_image_xyz = transform_image_3d(
+                    resized_moving_image_xyz,
+                    self._memory_dict_xy,
+                    best_transformation_xy,
+                    self.device_name
+        )
+        # search for the optimal dz translation
+        dz, gncc, transformed_moving_image_xyz = translate_along_z(
+                    z_translation_range,
+                    resized_fixed_image_xyz,
+                    transformed_moving_image_xyz,
+                    moving_image_median
+        )
+        # log the results
+        self.CM_dict[problem_id] = {
+                "moving": get_image_CM(moving_image_T),
+                "fixed": get_image_CM(fixed_image_T)
+        }
+        self.euler_parameters_dict[problem_id]["xy"] = [
+                score.item() for score in list(best_transformation_xy)
+        ]
+        self.euler_parameters_dict[problem_id]["dz"] = dz
+        self.outcomes[problem_id]["registered_image_xy_gncc"] = \
+                best_score_xy.item()
+        self.outcomes[problem_id]["registered_image_yz_gncc"] = \
+                calculate_gncc(
                     resized_fixed_image_xyz.max(0),
                     transformed_moving_image_xyz.max(0)
-            )
-
-            outcomes[problem_id]["registered_image_xyz_gncc_yz"] = \
-                    registered_image_xyz_gncc_yz.item()
-            registered_image_xyz_gncc_xz = calculate_gncc(
+                ).item()
+        self.outcomes[problem_id]["registered_image_xz_gncc"] = \
+                calculate_gncc(
                     resized_fixed_image_xyz.max(1),
                     transformed_moving_image_xyz.max(1)
-            )
-            outcomes[problem_id]["registered_image_xyz_gncc_xz"] = \
-                    registered_image_xyz_gncc_xz.item()
-
-            registered_image_xyz_gncc_xyz = calculate_gncc(
-                    resized_fixed_image_xyz,
-                    transformed_moving_image_xyz
-            )
-            outcomes[problem_id]["registered_image_xyz_gncc_xyz"] = \
-                    registered_image_xyz_gncc_xyz.item()
-
-            #########################################
-            #########################################
-            #########################################
-
-            # project onto the x-z plane along the maximum y
-            downsampled_resized_fixed_image_xz = \
-                        max_intensity_projection_and_downsample(
-                                resized_fixed_image_xyz,
-                                downsample_factor,
-                                projection_axis=1).astype(np.float32)
-
-            downsampled_resized_moving_image_xz = \
-                        max_intensity_projection_and_downsample(
-                                transformed_moving_image_xyz,
-                                downsample_factor,
-                                projection_axis=1).astype(np.float32)
-
-            # update the memory dictionary for grid search on x-z image
-            memory_dict_xz["fixed_images_repeated"][:] = torch.tensor(
-                        downsampled_resized_fixed_image_xz,
-                        device=device_name,
-                        dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-
-            memory_dict_xz["moving_images_repeated"][:] = torch.tensor(
-                        downsampled_resized_moving_image_xz,
-                        device=device_name,
-                        dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-
-            memory_dict_xz['output_tensor'][:] = torch.zeros_like(
-                        memory_dict_xz["moving_images_repeated"][:],
-                        device=device_name,
-                        dtype=torch.float32)
-
-            # search optimal parameters with projected image on the x-y plane
-            best_score_xz, best_transformation_xz = grid_search(memory_dict_xz)
-
-            outcomes[problem_id]["x-z_score_best"] = best_score_xz.item()
-            euler_parameters_dict[problem_id]["xz"] = [
-                    score.item() for score in list(best_transformation_xz)
-            ]
-
-            # transform the 3d image with the searched parameters
-            transformed_moving_image_xzy = transform_image_3d(
-                        np.transpose(transformed_moving_image_xyz, (0, 2, 1)),
-                        _memory_dict_xz,
-                        best_transformation_xz,
-                        device_name
-            )
-
-            transformed_moving_image_xzy_gncc_yz = calculate_gncc(
-                        resized_fixed_image_xzy.max(0),
-                        transformed_moving_image_xzy.max(0)
-            )
-            outcomes[problem_id]["transformed_moving_image_xzy_gncc_yz"] = \
-                    transformed_moving_image_xzy_gncc_yz.item()
-
-            transformed_moving_image_xzy_gncc_xy = calculate_gncc(
-                    resized_fixed_image_xzy.max(1),
-                    transformed_moving_image_xzy.max(1)
-            )
-            outcomes[problem_id]["transformed_moving_image_xzy_gncc_xy"] = \
-                    transformed_moving_image_xzy_gncc_xy.item()
-
-            registered_image_xzy_gncc_xzy = calculate_gncc(
-                    resized_fixed_image_xzy,
-                    transformed_moving_image_xzy)
-            outcomes[problem_id]["registered_image_xzy_gncc_xzy"] = \
-                    registered_image_xzy_gncc_xzy.item()
-
-            #########################################
-            #########################################
-            #########################################
-
-            # project onto the y-z plane along the maximum x
-            downsampled_resized_fixed_image_yz = \
-                        max_intensity_projection_and_downsample(
-                                resized_fixed_image_xyz,
-                                downsample_factor,
-                                projection_axis=0).astype(np.float32)
-            downsampled_resized_moving_image_yz = \
-                        max_intensity_projection_and_downsample(
-                                np.transpose(transformed_moving_image_xzy, (0, 2, 1)),
-                                downsample_factor,
-                                projection_axis=0).astype(np.float32)
-
-            memory_dict_yz["fixed_images_repeated"][:] = torch.tensor(
-                        downsampled_resized_fixed_image_yz,
-                        device=device_name,
-                        dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-
-            memory_dict_yz["moving_images_repeated"][:] = torch.tensor(
-                        downsampled_resized_moving_image_yz,
-                        device=device_name,
-                        dtype=torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
-
-            memory_dict_yz['output_tensor'][:] = torch.zeros_like(
-                        memory_dict_yz["moving_images_repeated"][:],
-                        device=device_name,
-                        dtype=torch.float32)
-
-            # search optimal parameters with projected image on the y-z plane
-            best_score_yz, best_transformation_yz = grid_search(memory_dict_yz)
-            outcomes[problem_id]["y-z_score_best"] = best_score_yz.item()
-            euler_parameters_dict[problem_id]["yz"] = [
-                    score.item() for score in list(best_transformation_yz)
-            ]
-
-            # transform the 3d image with the searched parameters
-            transformed_moving_image_yzx = transform_image_3d(
-                        np.transpose(transformed_moving_image_xzy, (2, 1, 0)),
-                        _memory_dict_yz,
-                        best_transformation_yz,
-                        device_name
-            )
-
-            transformed_moving_image_yzx_gncc_xz = calculate_gncc(
-                    resized_fixed_image_yzx.max(0),
-                    transformed_moving_image_yzx.max(0)
-            )
-            outcomes[problem_id]["transformed_moving_image_yzx_gncc_xz"] = \
-                    transformed_moving_image_yzx_gncc_xz.item()
-
-            transformed_moving_image_yzx_gncc_xy = calculate_gncc(
-                    resized_fixed_image_yzx.max(1),
-                    transformed_moving_image_yzx.max(1)
-            )
-            outcomes[problem_id]["transformed_moving_image_yzx_gncc_xy"] = \
-                    transformed_moving_image_yzx_gncc_xy.item()
-
-            registered_image_yzx_gncc_yzx = calculate_gncc(
-                    resized_fixed_image_yzx,
-                    transformed_moving_image_yzx
-            )
-            outcomes[problem_id]["registered_image_yzx_gncc_yzx"] = \
-                    registered_image_yzx_gncc_yzx.item()
-
-            # search for the optimal dz translation
-            dz, gncc, final_moving_image_xyz = translate_along_z(
-                        z_translation_range,
-                        resized_fixed_image_xyz,
-                        #transformed_moving_image_xyz,
-                        np.transpose(transformed_moving_image_yzx, (2, 0, 1)),
-                        moving_image_median
-            )
-            euler_parameters_dict[problem_id]["dz"] = dz
-
-            final_score = calculate_gncc(
-                        resized_fixed_image_xyz,
-                        final_moving_image_xyz)
-            outcomes[problem_id]["final_full_image_score"] = final_score.item()
-
-            # write dataset to .hdf5 file
-            hdf5_m_file.create_dataset(f'{t_moving}to{t_fixed}',
-                    data = final_moving_image_xyz)
-            hdf5_f_file.create_dataset(f'{t_moving}to{t_fixed}',
-                    data = resized_fixed_image_xyz)
-
-        hdf5_m_file.close()
-        hdf5_f_file.close()
-
-        write_to_json(outcomes, "eulergpu_outcomes_gfp")
-        write_to_json(CM_dict, "center_of_mass_gfp")
-        write_to_json(euler_parameters_dict, "euler_parameters_gfp")
+                ).item()
+        self.outcomes[problem_id]["registered_image_xyz_gncc"] = gncc
 
 
-def generate_transformed_gfp_images(target_image_shape,
-               save_directory="datasets"):
 
-    if not os.path.exists(save_directory):
-        os.mkdir(save_directory)
-    if not os.path.exists(f"{save_directory}/test"):
-        os.mkdir(f"{save_directory}/test")
-    if not os.path.exists(f"{save_directory}/test/gfp"):
-        os.mkdir(f"{save_directory}/test/gfp")
-
-    with open("resources/euler_parameters_gfp.json", "r") as f:
-        parameters_dict = json.load(f)
-    with open("resources/center_of_mass_gfp.json", "r") as f:
-        CM_dict = json.load(f)
-    with open("resources/registration_problems_gfp.json", 'r') as f:
-        registration_problem_dict = json.load(f)["test"]
-
-    solved_problems = list(parameters_dict.keys())
-    x_dim, y_dim, z_dim = target_image_shape
-    _memory_dict_xy = initialize(
-            np.zeros((x_dim, y_dim)).astype(np.float32),
-            np.zeros((x_dim, y_dim)).astype(np.float32),
-            np.zeros(z_dim),
-            np.zeros(z_dim),
-            np.zeros(z_dim),
-            z_dim,
-            device_name
-    )
-    _memory_dict_xz = initialize(
-            np.zeros((x_dim, z_dim)).astype(np.float32),
-            np.zeros((x_dim, z_dim)).astype(np.float32),
-            np.zeros(y_dim),
-            np.zeros(y_dim),
-            np.zeros(y_dim),
-            y_dim,
-            device_name
-    )
-    _memory_dict_yz = initialize(
-            np.zeros((y_dim, z_dim)).astype(np.float32),
-            np.zeros((y_dim, z_dim)).astype(np.float32),
-            np.zeros(x_dim),
-            np.zeros(x_dim),
-            np.zeros(x_dim),
-            x_dim,
-            device_name
-    )
-
-    for dataset_name, problems in registration_problem_dict.items():
-
-        save_path = f"{save_directory}/test/gfp/{dataset_name}"
-        if not os.path.exists(save_path):
-            os.mkdir(save_path)
-
-        hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
-        hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
-        print(f"before filtering: {len(problems)}")
-        problems = [problem for problem in problems
-                    if f"{dataset_name}/{problem}" in solved_problems]
-        print(f"after filtering: {len(problems)}")
-
-        dataset_path = locate_dataset(dataset_name)
-        for problem in tqdm(problems):
-
-            t_fixed, t_moving = problem.split("to")
-            t_fixed_4 = t_fixed.zfill(4)
-            t_moving_4 = t_moving.zfill(4)
-            fixed_image_T = get_image_T(
-                    glob.glob(
-                        f'{dataset_path}/NRRD_cropped/*_t{t_fixed_4}_ch1.nrrd'
-                )[0]
-            )
-            problem_id = f"{dataset_name}/{problem}"
-            """resized_fixed_image_xyz = filter_and_crop(
-                        fixed_image_T,
-                        np.median(fixed_image_T),
-                        target_image_shape)"""
-            resized_fixed_image_xyz = get_cropped_image(
-                    filter_image(fixed_image_T, np.median(fixed_image_T)),
-                    CM_dict[problem_id][1],
-                    target_image_shape,
-                    projection=-1
-            )
-            moving_image_T = get_image_T(
-                    glob.glob(
-                        f'{dataset_path}/NRRD_cropped/*_t{t_moving_4}_ch1.nrrd'
-                )[0]
-            )
-            """resized_moving_image_xyz = filter_and_crop(
-                        moving_image_T,
-                        np.median(moving_image_T),
-                        target_image_shape)"""
-            resized_moving_image_xyz = get_cropped_image(
-                    filter_image(moving_image_T, np.median(moving_image_T)),
-                    CM_dict[problem_id][0],
-                    target_image_shape,
-                    projection=-1
-            )
-            transformed_moving_image_xyz = transform_image_3d(
-                        resized_moving_image_xyz,
-                        _memory_dict_xy,
-                        torch.tensor(parameters_dict[problem_id]["xy"]).to(device_name),
-                        device_name
-            )
-            transformed_moving_image_xzy = transform_image_3d(
-                        np.transpose(transformed_moving_image_xyz, (0, 2, 1)),
-                        _memory_dict_xz,
-                        torch.tensor(parameters_dict[problem_id]["xz"]).to(device_name),
-                        device_name
-            )
-            transformed_moving_image_yzx = transform_image_3d(
-                        np.transpose(transformed_moving_image_xzy, (2, 1, 0)),
-                        _memory_dict_yz,
-                        torch.tensor(parameters_dict[problem_id]["yz"]).to(device_name),
-                        device_name
-            )
-            transformed_moving_image_xyz = np.transpose(
-                        transformed_moving_image_yzx, (2, 0, 1))
-
-            dz = parameters_dict[problem_id]["dz"]
-            final_moving_image_xyz = np.full(
-                    transformed_moving_image_xyz.shape,
-                    np.median(transformed_moving_image_xyz)
-            )
-            if dz == 0:
-                final_moving_image_xyz = transformed_moving_image_xyz
-            elif dz > 0:
-                final_moving_image_xyz[:, :, dz:] = \
-                        transformed_moving_image_xyz[:, :, :-dz]
-            elif dz < 0:
-                final_moving_image_xyz[:, :, :dz] = \
-                        transformed_moving_image_xyz[:, :, -dz:]
-
-            hdf5_m_file.create_dataset(problem,
-                    data = final_moving_image_xyz)
-            hdf5_f_file.create_dataset(problem,
-                    data = resized_fixed_image_xyz)
-
-        hdf5_m_file.close()
-        hdf5_f_file.close()
-
-
-def write_to_json(input_, output_file):
-
-    with open(f"resources/{output_file}.json", "w") as f:
-        json.dump(input_, f, indent=4)
-
-    print(f"{output_file} written under resources.")
-
-
-if __name__ == "__main__":
-
-    #save_directory = \
-    #    "/home/alicia/data_personal/regnet_dataset/euler-gpu_size-v1_gfp"
-    batch_size = 200
-    device_name = torch.device("cuda:0")
-    train_dataset_names = ["2022-01-09-01", "2022-01-23-04", "2022-01-27-04",
-            "2022-06-14-01", "2022-07-15-06", "2022-01-17-01", "2022-01-27-01",
-            "2022-03-16-02", "2022-06-28-01"]
-    valid_dataset_names = ["2022-02-16-04", "2022-04-05-01", "2022-07-20-01",
-            "2022-03-22-01", "2022-04-12-04", "2022-07-26-01"]
-    test_dataset_names = ["2022-04-14-04", "2022-04-18-04", "2022-08-02-01"]
-    #test_dataset_names = ["2022-01-06-01", "2022-01-06-02"]
-    target_image_shape = (208, 96, 56)
-    #generate_resized_images("datasets")
-    #generate_pregistered_images(
-    #           target_image_shape,
-    #           "datasets",
-    #           batch_size,
-    #           device_name)
-    #generate_transformed_gfp_images(target_image_shape)
-
-    dataset_dict = {
-            "train": train_dataset_names + ["2023-08-07-01", "2023-08-25-02"],
-            "valid": valid_dataset_names + ["2023-08-07-16"],
-            "test": test_dataset_names
-    }
-    generate_registration_problems(dataset_dict)
