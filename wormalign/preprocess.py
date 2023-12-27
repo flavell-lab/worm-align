@@ -6,8 +6,8 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 from typing import Dict, List, Tuple
 from wormalign.evaluate import calculate_gncc
-from wormalign.utils import (locate_dataset, filter_and_crop, get_image_T,
-        get_image_CM, get_cropped_image, filter_image)
+from wormalign.utils import (write_to_json, locate_dataset, filter_and_crop,
+        get_image_T, get_image_CM, get_cropped_image, filter_image)
 import glob
 import h5py
 import json
