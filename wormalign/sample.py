@@ -9,7 +9,6 @@ class Sampler:
     Create a .JSON file that keeps a subset of registration problems sampled
     from the problems obtained from the registration graph.
     """
-
     def __init__(
         self,
         dataset_dict: Dict[str, List[str]],
@@ -35,7 +34,9 @@ class Sampler:
         problems: List[str],
         cutoff: int = 600
     ) -> List[str]:
-
+        """
+        Sample a subset of registration problems.
+        """
         # sort problems by the length of moving and fixed time interval
         interval_to_problems_dict = dict()
         for problem in problems:
@@ -61,9 +62,20 @@ class Sampler:
         return sampled_problems
 
     def __call__(self, output_file_name):
-
         """
+        Create a .JSON file that keeps all the regsitration problems.
+
         :param output_file_name: name of the file to be created
+
+        :example
+            >>> dataset_dict = {
+            >>>        "train": ["2023-08-07-01"],
+            >>>        "valid": ["2023-08-07-16"],
+            >>>        "test": ["2022-04-14-04"]
+            >>> }
+            >>> sampler = Sampler(dataset_dict)
+            >>> output_file_name = "temp_problems"
+            >>> sampler(output_file_name)
         """
         for dataset_type, dataset_names in self.dataset_dict.items():
 
@@ -77,12 +89,3 @@ class Sampler:
                 self.output_dict[dataset_type][dataset_name] = sampled_problems
 
         write_to_json(self.output_dict, output_file_name)
-
-dataset_dict = {
-        "train": ["2023-08-07-01"],
-        "valid": ["2023-08-07-16"],
-        "test": ["2022-04-14-04"]
-}
-sampler = Sampler(dataset_dict)
-output_file_name = "temp_problems"
-sampler(output_file_name)
