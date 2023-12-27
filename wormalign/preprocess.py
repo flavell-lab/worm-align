@@ -4,11 +4,13 @@ from euler_gpu.preprocess import (initialize,
 from euler_gpu.transform import (transform_image_3d, translate_along_z)
 from numpy.typing import NDArray
 from tqdm import tqdm
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from wormalign.evaluate import calculate_gncc
 from wormalign.utils import (locate_dataset, filter_and_crop, get_image_T,
         get_image_CM, get_cropped_image, filter_image)
+import glob
 import h5py
+import json
 import numpy as np
 import os
 import random
@@ -175,14 +177,14 @@ class RegistrationProcessor:
         self.target_image_shape = target_image_shape
         self.save_directory = save_directory
         self.batch_size = batch_size
-        self.device_name = torch.device(device_name)
+        self.device_name = device_name
         self.downsample_factor = downsample_factor
 
         self.euler_parameters_dict = dict()
         self.outcomes = dict()
         self.CM_dict = dict()
         self.memory_dict_xy, self._memory_dict_xy = \
-                self.initialize_memory_dict()
+                self._initialize_memory_dict()
 
         self._ensure_directory_exists(self.save_directory)
 
@@ -225,11 +227,11 @@ class RegistrationProcessor:
         )))
         memory_dict_xy = initialize(
                     np.zeros((
-                        x_dim // downsample_factor, 
-                        y_dim // downsample_factor)).astype(np.float32),
+                        x_dim // self.downsample_factor,
+                        y_dim // self.downsample_factor)).astype(np.float32),
                     np.zeros((
-                        x_dim // downsample_factor,
-                        y_dim // downsample_factor)).astype(np.float32),
+                        x_dim // self.downsample_factor,
+                        y_dim // self.downsample_factor)).astype(np.float32),
                     x_translation_range_xy,
                     y_translation_range_xy,
                     theta_rotation_range_xy,
@@ -242,7 +244,7 @@ class RegistrationProcessor:
                     np.zeros(z_dim),
                     np.zeros(z_dim),
                     np.zeros(z_dim),
-                    self.z_dim,
+                    z_dim,
                     self.device_name
         )
         return memory_dict_xy, _memory_dict_xy
@@ -251,6 +253,19 @@ class RegistrationProcessor:
         self,
         augment: bool = False,
     ):
+        """
+        Process datasets by Euler-transforming the moving images with the set
+        of parameters that maximize the GNCC between the fixed and moving
+        image.
+
+        :example
+            >>> processor = RegistrationProcessor(
+            >>>    (208, 96, 56),
+            >>>    "datasets",
+            >>>    device_name = "cuda:0"
+            >>> )
+            >>> processor.process_datasets()
+        """
         with open("resources/registration_problems.json", 'r') as f:
             registration_problem_dict = json.load(f)
 
@@ -335,7 +350,7 @@ class RegistrationProcessor:
         self.outcomes[problem_id] = dict()
         self.euler_parameters_dict[problem_id] = dict()
 
-        t_moving, t_fixed = problem.split('to')
+        t_moving, t_fixed = problem_id.split('/')[1].split('to')
         t_moving_4 = t_moving.zfill(4)
         t_fixed_4 = t_fixed.zfill(4)
         fixed_image_path = glob.glob(
@@ -352,32 +367,39 @@ class RegistrationProcessor:
         resized_fixed_image_xyz = filter_and_crop(
                 fixed_image_T,
                 fixed_image_median,
-                target_image_shape
+                self.target_image_shape
+        )
+        resized_moving_image_xyz = filter_and_crop(
+                moving_image_T,
+                moving_image_median,
+                self.target_image_shape
         )
         # project onto the x-y plane along the maximum z
         downsampled_resized_fixed_image_xy = \
                 max_intensity_projection_and_downsample(
                         resized_fixed_image_xyz,
-                        downsample_factor,
+                        self.downsample_factor,
                         projection_axis = 2).astype(np.float32)
         downsampled_resized_moving_image_xy = \
                 max_intensity_projection_and_downsample(
                         resized_moving_image_xyz,
-                        downsample_factor,
+                        self.downsample_factor,
                         projection_axis = 2).astype(np.float32)
 
         # update the memory dictionary for grid search on x-y image
         self.memory_dict_xy["fixed_images_repeated"][:] = torch.tensor(
                 downsampled_resized_fixed_image_xy,
                 device = self.device_name,
-                dtype = torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+                dtype = torch.float32
+            ).unsqueeze(0).repeat(self.batch_size, 1, 1, 1)
         self.memory_dict_xy["moving_images_repeated"][:] = torch.tensor(
                 downsampled_resized_moving_image_xy,
                 device = self.device_name,
-                dtype = torch.float32).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+                dtype = torch.float32
+            ).unsqueeze(0).repeat(self.batch_size, 1, 1, 1)
 
         # search optimal parameters with projected image on the x-y plane
-        best_score_xy, best_transformation_xy = grid_search(memory_dict_xy)
+        best_score_xy, best_transformation_xy = grid_search(self.memory_dict_xy)
         # transform the 3d image with the searched parameters
         transformed_moving_image_xyz = transform_image_3d(
                     resized_moving_image_xyz,
@@ -386,6 +408,8 @@ class RegistrationProcessor:
                     self.device_name
         )
         # search for the optimal dz translation
+        z_dim = self.target_image_shape[2]
+        z_translation_range = range(-z_dim, z_dim)
         dz, gncc, transformed_moving_image_xyz = translate_along_z(
                     z_translation_range,
                     resized_fixed_image_xyz,
@@ -414,6 +438,3 @@ class RegistrationProcessor:
                     transformed_moving_image_xyz.max(1)
                 ).item()
         self.outcomes[problem_id]["registered_image_xyz_gncc"] = gncc
-
-
-
