@@ -23,6 +23,7 @@ class Sampler:
              "test": ["YYYY-MM-DD-X"]
             }
         """
+        self.dataset_dict = dataset_dict
         self.output_dict = {
                 "train": dict(),
                 "valid": dict(),
@@ -59,12 +60,12 @@ class Sampler:
 
         return sampled_problems
 
-    def __call__(output_file_name):
+    def __call__(self, output_file_name):
 
         """
         :param output_file_name: name of the file to be created
         """
-        for dataset_type, dataset_names in dataset_dict.items():
+        for dataset_type, dataset_names in self.dataset_dict.items():
 
             for dataset_name in tqdm(dataset_names):
                 lines = open(
