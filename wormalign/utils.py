@@ -1,21 +1,25 @@
 from julia.api import Julia
 from scipy import ndimage
 import SimpleITK as sitk
+import argparse
+import json
 import numpy as np
 import os
-import yaml
-import argparse
 
 jl = Julia(compiled_modules=False)
 jl.eval('include("adjust.jl")')
 adjust_image_size = jl.eval("adjust_image_cm")
 
 
-class QuotedStr(str):
-    pass
+def write_to_json(input_, output_file):
+
+    with open(f"resources/{output_file}.json", "w") as f:
+        json.dump(input_, f, indent=4)
+
+    print(f"{output_file} written under resources.")
 
 
-def locate_dataset(dataset_date):
+def locate_dataset(dataset_name):
 
     '''
     Given the date when the dataset was collected, this function locates which
@@ -95,91 +99,8 @@ def get_image_CM(image_T):
     return (round(x), round(y), round(z))
 
 
-def quoted_str_presenter(dumper, data):
-    return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
-
-
-def write_config_file(dataset_directory,
-                   train_datasets,
-                   valid_datasets,
-                   test_datasets):
-
-    yaml.add_representer(QuotedStr, quoted_str_presenter)
-
-    configuration = {
-        "dataset": {
-            "train": {
-                "dir": [],
-                "format": QuotedStr("h5"),
-                "labeled": False
-            },
-            "valid": {
-                "dir": [],
-                "format": QuotedStr("h5"),
-                "labeled": False
-            },
-            "test": {
-                "dir": [],
-                "format": QuotedStr("h5"),
-                "labeled": False
-            },
-            "type": "paired",
-            "moving_image_shape": [290, 120, 64],
-            "fixed_image_shape": [290, 120, 64],
-        },
-        "train": {
-            "method": QuotedStr("ddf"),
-            "backbone": {
-                "name": QuotedStr("local"),
-                "num_channel_initial": 16,
-                "extract_levels": [0, 1, 2, 3]
-            },
-            "loss": {
-                "image": {
-                    "name": QuotedStr("lncc"),
-                    "kernel_size": 16,
-                    "weight": 1.0
-                },
-                "regularization": {
-                    "weight": 0.2,
-                    "name": QuotedStr("nonrigid")
-                }
-            },
-            "preprocess": {
-                "data_augmentation": {
-                    "name": QuotedStr("affine")
-                },
-                "batch_size": 4,
-                "shuffle_buffer_num_batch": 2,
-                "num_parallel_calls": -1
-            },
-            "optimizer": {
-                "name": QuotedStr("Adam"),
-                "learning_rate": 1.0e-3
-            },
-            "epochs": 20000,
-            "save_period": 1
-        }
-    }
-
-    configuration['dataset']['train']['dir'] = [
-            QuotedStr(f"{dataset_directory}/train/{train_dataset}")
-                for train_dataset in train_datasets
-    ]
-    configuration['dataset']['valid']['dir'] = [
-            QuotedStr(f"{dataset_directory}/valid/{valid_dataset}")
-                for valid_dataset in valid_datasets
-    ]
-    configuration['dataset']['test']['dir'] = [
-            QuotedStr(f"{dataset_directory}/test/{test_dataset}")
-                for test_dataset in test_datasets
-    ]
-    with open(f"configs/config_test.yaml", 'w') as f:
-        yaml.dump(configuration, f, default_flow_style=None, default_style='')
-
-
 if __name__ == "__main__":
-
+    """
     dataset_directory = "/home/alicia/data_personal/test_preprocess"
     train_datasets = ["2022-01-09-01", "2022-01-23-04"]
     valid_datasets = ["2022-07-26-01", "2022-07-20-01"]
