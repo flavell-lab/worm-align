@@ -200,6 +200,20 @@ class DDFNetworkTrainer:
 
         """
         Train the DDF network.
+
+        :example
+            >>> config_file_path = "configs/config.yaml"
+            >>> log_directory = "/home/alicia/data_personal"
+            >>> experiment_name = "example"
+            >>> cuda_device = "1"
+            >>> network_trainer = DDFNetworkTrainer(
+            >>>    config_file_path,
+            >>>     log_directory,
+            >>>    experiment_name,
+            >>>    cuda_device
+            >>> )
+            >>> # start network training
+            >>> network_trainer()
         """
         self._ensure_directory_exists(self.log_directory)
         experiment_time = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -273,6 +287,24 @@ class DDFNetworkTester:
         Apply the DDF from the trained model on unseen images.
 
         :param report_time: whether or not to report time taken for testing
+
+        :example
+            >>> config_file_path = "configs/config.yaml"
+            >>> log_directory = "/home/alicia/data_personal"
+            >>> trained_ddf_model = "model0"
+            >>> experiment_name = "example_test"
+            >>> cuda_device = "1"
+            >>> checkpoint = 1000
+            >>> network_tester = DDFNetworkTester(
+            >>>    config_file_path,
+            >>>    log_directory,
+            >>>    trained_ddf_model,
+            >>>    experiment_name,
+            >>>    cuda_device,
+            >>>    checkpoint
+            >>> )
+            >>> # start network training
+            >>> network_tester()
         """
         experiment_time = datetime.now().strftime("%Y%m%d-%H%M%S")
         experiment_path = f"logs_predict/{experiment_name}_{experiment_time}"
