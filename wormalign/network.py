@@ -5,6 +5,7 @@ from typing import List, Optional, Union
 import copy
 import glob
 import os
+import time
 import yaml
 
 
@@ -307,7 +308,7 @@ class DDFNetworkTester:
             >>> network_tester()
         """
         experiment_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-        experiment_path = f"logs_predict/{experiment_name}_{experiment_time}"
+        experiment_path = f"logs_predict/{self.experiment_name}_{experiment_time}"
         start_time = time.time()
         predict(
             gpu = self.cuda_device,
