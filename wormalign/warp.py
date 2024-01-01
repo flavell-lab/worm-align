@@ -57,7 +57,7 @@ class ImageWarper:
     @registration_problem.setter
     def registration_problem(self, value: str):
         self._registration_problem = value
-        self._update_problem_id()
+        self._update_problem()
 
     def _update_problem(self):
         self.problem_id = f"{self.dataset_name}/{self._registration_problem}"
@@ -74,31 +74,32 @@ class ImageWarper:
         :param target: the item to retrieve; options are `all`, `ddf`,
             `warped_moving_image`, `fixed_image`, `moving_image`
         """
-        network_output_path = self._get_problem_path(
-                self.registration_problem)
-        network_outputs = self._load_images(network_outputs_path)
+        network_output_path = self._get_problem_path()
+        network_outputs = self._load_images(network_output_path)
 
         if target == "all":
             return network_outputs
-        elif:
+        else:
             return network_outputs[target]
 
+    def warp_image_roi(self):
+        pass
+
     def _get_problem_path(self):
-        pair_num = PAIR_NUM_DICT[self.problem_id]
-        return f"{self.ddf_directory}/test/pair_{pair_num}"
+        return f"{self.ddf_directory}/test/pair_{self.pair_num}"
 
     def _load_images(
         self,
-        network_outputs_path: str
+        network_output_path: str
     ):
-        ddf_nii_path = f"{network_outputs_path}/ddf.nii.gz"
+        ddf_nii_path = f"{network_output_path}/ddf.nii.gz"
         ddf_array = nib.load(ddf_nii_path).get_fdata()
         warped_moving_image = nib.load(
-                f"{network_outputs_path}/pred_fixed_image.nii.gz").get_fdata()
+                f"{network_output_path}/pred_fixed_image.nii.gz").get_fdata()
         fixed_image = nib.load(
-                f"{network_outputs_path}/fixed_image.nii.gz").get_fdata()
+                f"{network_output_path}/fixed_image.nii.gz").get_fdata()
         moving_image = nib.load(
-                f"{network_outputs_path}/moving_image.nii.gz").get_fdata()
+                f"{network_output_path}/moving_image.nii.gz").get_fdata()
 
         return {
                 "ddf": ddf_array,
@@ -138,7 +139,7 @@ class ImageWarper:
     def _resize_image_roi(
         self,
         image_roi_path: str,
-        image_CM: List[int, int, int]
+        image_CM: List[int]
     ):
         image_roi_T = get_image_T(image_roi_path)
 
@@ -250,5 +251,5 @@ class ImageWarper:
         elif dz == 0:
             translated_image = image
 
-    return translated_image
+        return translated_image
 
