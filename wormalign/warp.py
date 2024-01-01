@@ -82,8 +82,37 @@ class ImageWarper:
         else:
             return network_outputs[target]
 
-    def warp_image_roi(self):
-        pass
+    def get_image_roi(self):
+        """
+        Get image ROI.
+        """
+        roi_dict = self._preprocess_image_roi()
+        warped_moving_image_roi = self._warp_moving_image_roi(
+                roi_dict["euler_tfmed_moving_image_roi"]
+        )
+        roi_dict["warped_moving_image_roi"] = warped_moving_image_roi
+
+        return roi_dict
+
+    def _warp_moving_image_roi(
+        self,
+        moving_image_roi: NDArray[np.float]
+    ):
+        """
+        Warp the moving image ROI with DDF.
+        """
+        moving_image_roi_tf = tf.cast(
+                tf.expand_dims(moving_image_roi, axis=0),
+                dtype=tf.float32
+        )
+        warping = layer.Warping(fixed_image_size = self.image_shape,
+                interpolation = "nearest")
+        ddf = self.get_network_outputs("ddf")
+        warped_moving_image_roi_tf = warping(
+                inputs = [ddf, moving_image_roi_tf]
+        )
+
+        return warped_moving_image_roi_tf.numpy()[0]
 
     def _get_problem_path(self):
         return f"{self.ddf_directory}/test/pair_{self.pair_num}"
@@ -114,7 +143,7 @@ class ImageWarper:
         of their corresponding channel images.
         """
         nrrd_images_path = locate_dataset(self.dataset_name)
-        t_moving, t_fixed = self.problem_id.split('to')
+        t_moving, t_fixed = self.registration_problem.split('to')
         fixed_image_roi_path = f"{nrrd_images_path}/img_roi_watershed/{t_fixed}.nrrd"
         moving_image_roi_path = f"{nrrd_images_path}/img_roi_watershed/{t_moving}.nrrd"
 
@@ -151,7 +180,7 @@ class ImageWarper:
 
     def _euler_transform_image_roi(
         self,
-        moving_image_roi: NDArray[np.int_]
+        moving_image_roi: NDArray[np.float_]
     ):
         x_dim, y_dim, z_dim = self.image_shape
         _memory_dict_xy = self._initialize_memory_dict(x_dim, y_dim, z_dim)
@@ -180,10 +209,10 @@ class ImageWarper:
 
     def _apply_euler_parameters(
         self,
-        moving_image_roi: NDArray[np.int_],
+        moving_image_roi: NDArray[np.float_],
         memory_dict: Dict[str, torch.Tensor],
         dimension: str = "xy"
-    ) ->  NDArray[np.int_]:
+    ) ->  NDArray[np.float_]:
 
         best_transformation = torch.tensor(
             EULER_PARAMETERS_DICT[self.problem_id][dimension]
@@ -210,9 +239,9 @@ class ImageWarper:
 
     def _adjust_image_shape(
         self,
-        image: NDArray[np.int_],
+        image: NDArray[np.float_],
         dimension: str,
-    ) -> NDArray[np.int_]:
+    ) -> NDArray[np.float_]:
 
         x_dim, y_dim, z_dim = self.image_shape
         reshaping_dict = {
@@ -238,8 +267,8 @@ class ImageWarper:
 
     def _translate_image(
         self,
-        image: NDArray[np.int_]
-    ) -> NDArray[np.int_]:
+        image: NDArray[np.float_]
+    ) -> NDArray[np.float_]:
 
         dz = EULER_PARAMETERS_DICT[self.problem_id]["dz"]
         translated_image = np.full(self.image_shape, 0)
