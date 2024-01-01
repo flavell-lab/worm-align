@@ -31,17 +31,49 @@ class ImageWarper:
         image_shape: Tuple[int, int, int],
         device_name: str = "cuda:0"
     ):
+        """
+        Init.
+
+        :param ddf_directory: directory to the DDF outputs; e.g.,
+            "/home/alicia/data_personal/logs_predict/ddf_model_20231116-134048"
+        :dataset_name: name of the dataset containing the registration problem
+        :registration_problem: problem to be registered
+        :image_shape: the uniform image shape that the network takes in the
+            order of (x_dim, y_dim, z_dim)
+        :device_name: CUDA device to run Euler-GPU; e.g., "cuda:0" (default)
+        """
         self.ddf_directory = ddf_directory
         self.dataset_name = dataset_name
-        self.registration_problem = registration_problem
-        self.problem_id = f"{dataset_name}/{self.registration_problem}"
+        self._registration_problem = registration_problem
         self.image_shape = image_shape
-        self.device = torch.device(self.device_name)
+        self.device = torch.device(device_name)
+        # update `problem_id` and the corresponding pair number
+        self._update_problem()
+
+    @property
+    def registration_problem(self):
+        return self._registration_problem
+
+    @registration_problem.setter
+    def registration_problem(self, value: str):
+        self._registration_problem = value
+        self._update_problem_id()
+
+    def _update_problem(self):
+        self.problem_id = f"{self.dataset_name}/{self._registration_problem}"
+        self.pair_num = PAIR_NUM_DICT[self.problem_id]
 
     def get_network_outputs(
         self,
         target: str = "all"
     ):
+        """
+        Get the DDF warped moving images, DDF, original fixed and moving images
+        from the network outputs
+
+        :param target: the item to retrieve; options are `all`, `ddf`,
+            `warped_moving_image`, `fixed_image`, `moving_image`
+        """
         network_output_path = self._get_problem_path(
                 self.registration_problem)
         network_outputs = self._load_images(network_outputs_path)
@@ -88,18 +120,18 @@ class ImageWarper:
         # resize the fixed and moving image ROIs
         resized_fixed_image_roi = self._resize_image_roi(
                 fixed_image_roi_path,
-                CM_DICT[problem_id][1]
+                CM_DICT[self.problem_id][1]
         )
         resized_moving_image_roi = self._resize_image_roi(
                 moving_image_roi_path,
-                CM_DICT[problem_id][0]
+                CM_DICT[self.problem_id][0]
         )
         euler_transformed_moving_image_roi = self._euler_transform_image_roi(
                 resized_moving_image_roi
         )
         return {
             "fixed_image_roi": resized_fixed_image_roi,
-            "moving_image_roi": resized_fixed_image_roi,
+            "moving_image_roi": resized_moving_image_roi,
             "euler_tfmed_moving_image_roi": euler_transformed_moving_image_roi
         }
 
@@ -122,6 +154,7 @@ class ImageWarper:
     ):
         x_dim, y_dim, z_dim = self.image_shape
         _memory_dict_xy = self._initialize_memory_dict(x_dim, y_dim, z_dim)
+
         return self._apply_euler_parameters(
                 moving_image_roi,
                 _memory_dict_xy
