@@ -11,16 +11,6 @@ import tensorflow as tf
 import torch
 
 
-# Load JSON resources
-def load_json(file_path):
-    with open(file_path, "r") as f:
-        return json.load(f)
-
-ALL_PROBLEMS = load_json("resources/registration_problems.json")
-CM_DICT = load_json("resources/center_of_mass.json")
-EULER_PARAMETERS_DICT = load_json("resources/euler_parameters.json")
-PAIR_NUM_DICT = load_json("resources/problem_to_pairnum.json")
-
 class ImageWarper:
 
     def __init__(
@@ -47,8 +37,19 @@ class ImageWarper:
         self._registration_problem = registration_problem
         self.image_shape = image_shape
         self.device = torch.device(device_name)
+        self.cm_dict = self._load_json(
+                "resources/center_of_mass_ALv0.json")
+        self.euler_parameters_dict = self._load_json(
+                "resources/euler_parameters_ALv0.json")
+        self.pairnum_dict = self._load_json(
+                "resources/problem_to_pairnum.json")
         # update `problem_id` and the corresponding pair number
         self._update_problem()
+
+    def _load_json(self, file_path: str):
+        """Load JSON resources"""
+        with open(file_path, "r") as f:
+            return json.load(f)
 
     @property
     def registration_problem(self):
@@ -61,7 +62,7 @@ class ImageWarper:
 
     def _update_problem(self):
         self.problem_id = f"{self.dataset_name}/{self._registration_problem}"
-        self.pair_num = PAIR_NUM_DICT[self.problem_id]
+        self.pair_num = self.pairnum_dict[self.problem_id]
 
     def get_network_outputs(
         self,
@@ -87,16 +88,15 @@ class ImageWarper:
         Get image ROI.
         """
         roi_dict = self._preprocess_image_roi()
-        warped_moving_image_roi = self._warp_moving_image_roi(
+        roi_dict["warped_moving_image_roi"] = self._warp_moving_image_roi(
                 roi_dict["euler_tfmed_moving_image_roi"]
         )
-        roi_dict["warped_moving_image_roi"] = warped_moving_image_roi
 
         return roi_dict
 
     def _warp_moving_image_roi(
         self,
-        moving_image_roi: NDArray[np.float]
+        moving_image_roi: NDArray[np.float_]
     ):
         """
         Warp the moving image ROI with DDF.
@@ -150,11 +150,11 @@ class ImageWarper:
         # resize the fixed and moving image ROIs
         resized_fixed_image_roi = self._resize_image_roi(
                 fixed_image_roi_path,
-                CM_DICT[self.problem_id][1]
+                self.cm_dict[self.problem_id][1]
         )
         resized_moving_image_roi = self._resize_image_roi(
                 moving_image_roi_path,
-                CM_DICT[self.problem_id][0]
+                self.cm_dict[self.problem_id][0]
         )
         euler_transformed_moving_image_roi = self._euler_transform_image_roi(
                 resized_moving_image_roi
@@ -175,8 +175,7 @@ class ImageWarper:
         return get_cropped_image(
                 image_roi_T,
                 image_CM,
-                self.image_shape,
-                -1).astype(np.float32)
+                self.image_shape, -1).astype(np.float32)
 
     def _euler_transform_image_roi(
         self,
@@ -215,7 +214,7 @@ class ImageWarper:
     ) ->  NDArray[np.float_]:
 
         best_transformation = torch.tensor(
-            EULER_PARAMETERS_DICT[self.problem_id][dimension]
+            self.euler_parameters_dict[self.problem_id][dimension]
         ).to(self.device)
 
         moving_image_roi = self._adjust_image_shape(
@@ -270,7 +269,7 @@ class ImageWarper:
         image: NDArray[np.float_]
     ) -> NDArray[np.float_]:
 
-        dz = EULER_PARAMETERS_DICT[self.problem_id]["dz"]
+        dz = self.euler_parameters_dict[self.problem_id]["dz"]
         translated_image = np.full(self.image_shape, 0)
 
         if dz < 0:
