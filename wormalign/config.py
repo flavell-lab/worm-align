@@ -59,8 +59,8 @@ class ConfigGenerator:
             `save_period` epochs
         """
         train_datasets = glob.glob(f"{dataset_path}/train/nonaugmented/*")
-        valid_datasets = glob.glob(f"{dataset_path}/valid/*")
-        test_datasets = glob.glob(f"{dataset_path}/test/*")
+        valid_datasets = glob.glob(f"{dataset_path}/valid/nonaugmented/*")
+        test_datasets = glob.glob(f"{dataset_path}/test/nonaugmented/*")
 
         self.configuration = {
             "dataset": {
@@ -70,7 +70,7 @@ class ConfigGenerator:
                         train_datasets
                     ],
                     "format": QuotedStr("h5"),
-                    "labeled": False
+                    "labeled": True
                 },
                 "valid": {
                     "dir": [
@@ -78,7 +78,7 @@ class ConfigGenerator:
                         valid_datasets
                     ],
                     "format": QuotedStr("h5"),
-                    "labeled": False
+                    "labeled": True
                 },
                 "test": {
                     "dir": [
@@ -104,6 +104,10 @@ class ConfigGenerator:
                         "name": QuotedStr("lncc"),
                         "kernel_size": 16,
                         "weight": image_loss_weight,
+                    },
+                    "label": {
+                        "name": "dice",
+                        "weight": 1
                     },
                     "regularization": {
                         "weight": regularization_loss_weight,
