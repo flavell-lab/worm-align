@@ -122,7 +122,7 @@ def generate_label(
         save_directory: str,
         problem_dict: Dict[str, Dict[str, List[str]]]
     ):
-    for dataset in tqdm(datasets):
+    for dataset in datasets:
         label_path = f"{save_directory}/{dataset_type}/nonaugmented/{dataset}"
         problems = problem_dict[dataset_type][dataset]
         warper.dataset_name = dataset
@@ -130,7 +130,7 @@ def generate_label(
         with h5py.File(f"{label_path}/moving_labels.h5", "w") as h5_m_file, \
              h5py.File(f"{label_path}/fixed_labels.h5", "w") as h5_f_file:
 
-            for problem in problems:
+            for problem in tqdm(problems):
                 warper.registration_problem = problem
                 label_dict = warper.warp_label()
 

@@ -7,7 +7,7 @@ from tqdm import tqdm
 from typing import Dict, List, Tuple
 from wormalign.evaluate import calculate_gncc
 from wormalign.utils import (write_to_json, locate_dataset, filter_and_crop,
-        get_image_T, get_image_CM, get_cropped_image, filter_image)
+        get_image_T, get_image_CM, filter_image)
 import glob
 import h5py
 import json
@@ -297,10 +297,14 @@ class RegistrationProcessor:
         """
         dataset_type_dir = f"{self.save_directory}/{dataset_type}"
         self._ensure_directory_exists(dataset_type_dir)
-        #self._ensure_directory_exists(f"{dataset_type_dir}/nonaugmented")
+        self._ensure_directory_exists(f"{dataset_type_dir}/nonaugmented")
         for dataset_name, problems in problem_dict.items():
             print(f"=====Processing {dataset_name} in {dataset_type}=====")
-            self.process_dataset(dataset_name, problems, dataset_type_dir)
+            self.process_dataset(
+                    dataset_name,
+                    problems,
+                    f"{dataset_type_dir}/nonaugmented"
+            )
 
     def process_dataset(
         self,
