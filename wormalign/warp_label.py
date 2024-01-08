@@ -39,9 +39,6 @@ class LabelWarper(ImageWarper):
     def _update_problem(self):
         self.problem_id = f"{self.dataset_name}/{self._registration_problem}"
 
-    def _nonempty(self):
-        return self.dataset_name == "" or self.registration_problem == ""
-
     def _preprocess_image_roi(self):
         """
         Redefine this method for LabelWarper.
