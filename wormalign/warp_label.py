@@ -134,20 +134,33 @@ def generate_label(
                 warper.registration_problem = problem
                 label_dict = warper.warp_label()
 
+                moving_image_roi = label_dict["euler_tfmed_moving_image_roi"]
                 h5_m_file.create_dataset(
                         problem,
-                        data = label_dict["euler_tfmed_moving_image_roi"]
+                        data = moving_image_roi / np.amax(moving_image_roi)
                 )
+                fixed_image_roi = label_dict["fixed_image_roi"]
                 h5_f_file.create_dataset(
                         problem,
-                        data = label_dict["fixed_image_roi"]
+                        data = fixed_image_roi / np.amax(fixed_image_roi)
                 )
             print(f"{dataset} generated!")
 
 
-if __name__ == "__main__":
-    train_datasets = ["2022-01-09-01", "2022-01-17-01", "2022-01-23-04"]
-    valid_datasets = ["2022-02-16-04", "2022-04-05-01"]
+def main():
+
+    train_datasets = [
+            #"2022-01-23-04"
+            "2022-01-09-01", "2022-01-27-04", "2022-06-14-01", "2022-07-15-06",
+            "2022-01-17-01", "2022-01-27-01", "2022-03-16-02", "2022-06-28-01"
+    ]
+    valid_datasets = [
+            # "2022-02-16-04", "2022-04-05-01"
+            "2022-07-20-01", "2022-03-22-01", "2022-04-12-04", "2022-07-26-01"
+    ]
+    test_datasets = [
+            "2022-04-14-04", "2022-04-18-04", "2022-08-02-01"
+    ]
     device_name = "cuda:0"
     target_image_shape = (284, 120, 64)
     registration_problem_file = "registration_problems_ALv0.json"
@@ -155,4 +168,8 @@ if __name__ == "__main__":
 
     generate_labels(train_datasets, valid_datasets, device_name,
             target_image_shape, registration_problem_file, save_directory)
+
+
+if __name__ == "__main__":
+    main()
 
