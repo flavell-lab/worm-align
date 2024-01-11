@@ -134,12 +134,14 @@ def generate_label(
                 moving_image_roi = label_dict["euler_tfmed_moving_image_roi"]
                 h5_m_file.create_dataset(
                         problem,
-                        data = moving_image_roi / np.amax(moving_image_roi)
+                        data = moving_image_roi
+                        #data = moving_image_roi / np.amax(moving_image_roi)
                 )
                 fixed_image_roi = label_dict["fixed_image_roi"]
                 h5_f_file.create_dataset(
                         problem,
-                        data = fixed_image_roi / np.amax(fixed_image_roi)
+                        data = fixed_image_roi
+                        #data = fixed_image_roi / np.amax(fixed_image_roi)
                 )
             print(f"{dataset} generated!")
 
