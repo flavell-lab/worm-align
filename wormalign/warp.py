@@ -221,11 +221,19 @@ class ImageWarper:
                 moving_image_roi,
                 dimension
         )
+        if dimension == "xy":
+            axis = 2
+        elif dimension == "xz":
+            axis = 1
+        elif dimension == "yz":
+            axis = 0
         transformed_moving_image_roi = transform_image_3d(
                 moving_image_roi,
                 memory_dict,
                 best_transformation,
-                self.device
+                self.device,
+                axis,
+                interpolation = "nearest"
         )
         translated_moving_image_roi = self._translate_image(
                 self._adjust_image_shape(
