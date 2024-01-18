@@ -179,14 +179,16 @@ class ImageWarper:
 
     def _euler_transform_image_roi(
         self,
-        moving_image_roi: NDArray[np.float_]
+        moving_image_roi: NDArray[np.float_],
+        interpolation: str = "nearest"
     ):
         x_dim, y_dim, z_dim = self.image_shape
         _memory_dict_xy = self._initialize_memory_dict(x_dim, y_dim, z_dim)
 
         return self._apply_euler_parameters(
                 moving_image_roi,
-                _memory_dict_xy
+                _memory_dict_xy,
+                interpolation
         )
 
     def _initialize_memory_dict(
@@ -210,7 +212,8 @@ class ImageWarper:
         self,
         moving_image_roi: NDArray[np.float_],
         memory_dict: Dict[str, torch.Tensor],
-        dimension: str = "xy"
+        interpolation: str,
+        dimension: str = "xy",
     ) ->  NDArray[np.float_]:
 
         best_transformation = torch.tensor(
@@ -233,7 +236,7 @@ class ImageWarper:
                 best_transformation,
                 self.device,
                 axis,
-                interpolation = "nearest"
+                interpolation
         )
         translated_moving_image_roi = self._translate_image(
                 self._adjust_image_shape(
@@ -288,4 +291,3 @@ class ImageWarper:
             translated_image = image
 
         return translated_image
-
