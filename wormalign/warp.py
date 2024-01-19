@@ -42,7 +42,7 @@ class ImageWarper:
         self.euler_parameters_dict = self._load_json(
                 "resources/euler_parameters_ALv0.json")
         self.pairnum_dict = self._load_json(
-                "resources/problem_to_pairnum.json")
+                "resources/problem_to_pairnum_ALv0.json")
         # update `problem_id` and the corresponding pair number
         self._update_problem()
 
@@ -150,11 +150,11 @@ class ImageWarper:
         # resize the fixed and moving image ROIs
         resized_fixed_image_roi = self._resize_image_roi(
                 fixed_image_roi_path,
-                self.cm_dict[self.problem_id][1]
+                self.cm_dict[self.problem_id]["fixed"]
         )
         resized_moving_image_roi = self._resize_image_roi(
                 moving_image_roi_path,
-                self.cm_dict[self.problem_id][0]
+                self.cm_dict[self.problem_id]["moving"]
         )
         euler_transformed_moving_image_roi = self._euler_transform_image_roi(
                 resized_moving_image_roi
