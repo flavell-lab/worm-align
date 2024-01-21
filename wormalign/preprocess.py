@@ -409,7 +409,8 @@ class RegistrationProcessor:
                     resized_moving_image_xyz,
                     self._memory_dict_xy,
                     best_transformation_xy,
-                    self.device_name
+                    self.device_name,
+                    2
         )
         # search for the optimal dz translation
         z_dim = self.target_image_shape[2]
