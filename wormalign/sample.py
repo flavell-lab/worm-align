@@ -1,6 +1,7 @@
 from tqdm import tqdm
 from typing import Dict, List
 from wormalign.utils import (locate_dataset, write_to_json)
+import os
 import random
 
 
@@ -28,6 +29,23 @@ class Sampler:
                 "valid": dict(),
                 "test": dict()
         }
+
+    def _get_all_problems(
+        self,
+        dataset_name: str
+    ) -> List[str]:
+        """
+        Read all the problems suitable for registration.
+        """
+        dataset_path = locate_dataset(dataset_name)
+        if os.path.exists(f"{dataset_path}/registration_problems.txt"):
+            lines = open(
+                f"{dataset_path}/registration_problems.txt", "r").readlines()
+            problems = [line.strip().replace(" ", "to") for line in lines]
+        else:
+            raise FileNotFoundError(
+                f"Can't find {dataset_path}/registration_problems.txt")
+        return problems
 
     def _sample_registration_problems(
         self,
@@ -61,7 +79,7 @@ class Sampler:
 
         return sampled_problems
 
-    def __call__(self, output_file_name):
+    def __call__(self, output_file_name, num_problems: int = -1):
         """
         Create a .JSON file that keeps all the regsitration problems.
 
@@ -74,18 +92,20 @@ class Sampler:
             >>>        "test": ["2022-04-14-04"]
             >>> }
             >>> sampler = Sampler(dataset_dict)
-            >>> output_file_name = "temp_problems"
+            >>> output_file_name = "registration_problems"
             >>> sampler(output_file_name)
         """
         for dataset_type, dataset_names in self.dataset_dict.items():
 
             for dataset_name in tqdm(dataset_names):
-                lines = open(
-                    f"{locate_dataset(dataset_name)}/registration_problems.txt",
-                    "r").readlines()
-                problems = [line.strip().replace(" ", "to")
-                        for line in lines]
-                sampled_problems = self._sample_registration_problems(problems)
+                problems = self._get_all_problems(dataset_name)
+                # sample accordings to the defined scheme if the number of
+                # samples per dataset is not specified
+                if num_problems == -1:
+                    sampled_problems = self._sample_registration_problems(problems)
+                else:
+                    sampled_problems = random.sample(problems, num_problems)
                 self.output_dict[dataset_type][dataset_name] = sampled_problems
 
         write_to_json(self.output_dict, output_file_name)
+
