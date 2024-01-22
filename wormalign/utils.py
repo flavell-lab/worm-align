@@ -22,41 +22,45 @@ def write_to_json(input_: Dict[str, Any], output_file: str):
     :param input_: dictionaty to be written
     :param output_file: .JSON file name
     """
+    class CustomEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, np.float32):
+                return float(obj)
+            return json.JSONEncoder.default(self, obj)
+
     with open(f"resources/{output_file}.json", "w") as f:
-        json.dump(input_, f, indent=4)
+        json.dump(input_, f, indent=4, cls=CustomEncoder)
 
     print(f"{output_file} written under resources.")
 
 
 def locate_dataset(dataset_name: str):
-
     """
-    Given the date when the dataset was collected, this function locates which
-    directory this data file can be found
+    Given the name of the dataset, this function locates the directory where
+    this data file can be found.
 
     :param dataset_name: name of the dataset; e.g. `2022-03-16-02`
     """
-    neuropal_dir = '/home/alicia/data_prj_neuropal/data_processed'
-    non_neuropal_dir = '/home/alicia/data_prj_kfc/data_processed'
-    others_dir = '/data3/prj_rim/data_processed'
+    neuropal_dir = "/data1/prj_neuropal/data_processed"
+    kfc_dir = "/data1/prj_kfc/data_processed"
+    rim_dir = "/data3/prj_rim/data_processed"
 
-    if dataset_name in ["2023-08-07-01", "2023-08-25-02", "2023-08-07-16"]:
-        return f"{others_dir}/{dataset_name}_output"
-        """candidates = os.listdir(others_dir)
-        return os.path.join(
-                others_dir,
-                list(filter(lambda d: dataset_name in d, candidates))[0]
-        )"""
+    dir_dataset_dict = {
+        neuropal_dir: os.listdir(neuropal_dir),
+        kfc_dir: os.listdir(kfc_dir),
+        rim_dir: os.listdir(rim_dir)
+    }
 
-    for directory in os.listdir(non_neuropal_dir):
-        if dataset_name in directory:
-            return os.path.join(non_neuropal_dir, directory)
+    for base_dir, dataset_dirs in dir_dataset_dict.items():
 
-    for directory in os.listdir(neuropal_dir):
-        if dataset_name in directory:
-            return os.path.join(neuropal_dir, directory)
+        if any(dataset_name in dataset_dir for dataset_dir in dataset_dirs):
+            dataset_path = glob.glob(f"{base_dir}/{dataset_name}_*")
+            assert len(dataset_path) == 1, \
+                f"More than one path for {dataset_name} found: {dataset_path}"
+            return dataset_path[0]
 
-    raise Exception(f'Dataset {dataset_name} cannot be founed.')
+    raise FileNotFoundError(
+        f'Dataset {dataset_name} not found in any specified directories.')
 
 
 def filter_and_crop(
