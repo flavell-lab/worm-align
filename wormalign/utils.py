@@ -108,11 +108,11 @@ def filter_image(
 
 
 def get_cropped_image(
-        image_T: NDArray[np.float32],
+        image_T: np.ndarray,
         center: Tuple[int, int, int],
         target_image_shape: Tuple[int, int, int],
         projection: int
-    ) -> NDArray[np.float32]:
+    ) -> np.ndarray:
     """
     Resize image to the target image (that could also be projected along the
     maximum value of the given axis).
@@ -158,7 +158,7 @@ def get_image_T(image_path: str) -> NDArray[np.float32]:
     return image_T
 
 
-def get_image_CM(image_T: NDArray[np.float32]) -> Tuple[int, int, int]:
+def get_image_CM(image_T: np.ndarray) -> Tuple[int, int, int]:
     """
     Find the center of mass of image.
 
