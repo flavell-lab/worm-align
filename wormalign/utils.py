@@ -4,14 +4,21 @@ from scipy import ndimage
 from typing import Any, Dict, Tuple
 import SimpleITK as sitk
 import argparse
+import glob
 import json
 import numpy as np
 import os
 
-
 jl = Julia(compiled_modules=False)
 jl.eval('include("adjust.jl")')
 ADJUST_IMAGE_SIZE = jl.eval("adjust_image_cm")
+
+
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.float32):
+            return float(obj)
+        return json.JSONEncoder.default(self, obj)
 
 def write_to_json(input_: Dict[str, Any], output_file: str):
 
