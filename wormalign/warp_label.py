@@ -26,6 +26,9 @@ class LabelWarper(ImageWarper):
         """
         if self._label_exists():
             return self._preprocess_image_roi()
+        else:
+            print(f"{self.dataset_name} has no labels")
+            return {}
 
     def _label_exists(self):
 

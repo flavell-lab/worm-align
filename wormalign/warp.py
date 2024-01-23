@@ -37,12 +37,12 @@ class ImageWarper:
         self._registration_problem = registration_problem
         self.image_shape = image_shape
         self.device = torch.device(device_name)
-        self.cm_dict = self._load_json(
-                "resources/center_of_mass_ALv0.json")
+        self.CM_dict = self._load_json(
+                "resources/center_of_mass_ALv1.json")
         self.euler_parameters_dict = self._load_json(
-                "resources/euler_parameters_ALv0.json")
+                "resources/euler_parameters_ALv1.json")
         self.pairnum_dict = self._load_json(
-                "resources/problem_to_pairnum_ALv0.json")
+                "resources/problem_to_pairnum.json")
         # update `problem_id` and the corresponding pair number
         self._update_problem()
 
