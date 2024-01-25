@@ -1,5 +1,5 @@
 from typing import Tuple
-import benchmark_utils as utils
+import wormalign.benchmark_utils as utils
 import tensorflow as tf
 
 EPS = 1.0e-5
@@ -312,7 +312,7 @@ class NonRigidPenalty(tf.keras.layers.Layer):
         assert img_size != (0, 0, 0), "img_size must be set to a value other than (0, 0, 0)"
 
         self.img_size = img_size
-        grid_ref = tf.expand_dims(layer_util.get_reference_grid(grid_size=self.img_size), axis=0)
+        grid_ref = tf.expand_dims(utils.get_reference_grid(grid_size=self.img_size), axis=0)
         self.ddf_ref = -grid_ref
 
     def call(

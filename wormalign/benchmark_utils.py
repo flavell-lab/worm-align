@@ -2,10 +2,55 @@
 # on GitHub. The original implementation can be found at:
 # https://github.com/flavell-lab/DeepReg/deepreg/loss
 # The code is used under the MIT License.
-from deepreg.model import layer_util
-from typing import Callable, Tuple
+from typing import Callable, List, Tuple, Union
 import math
 import tensorflow as tf
+
+
+def get_reference_grid(
+        grid_size: Union[Tuple[int, ...], 
+        List[int]]
+    ) -> tf.Tensor:
+    """
+    Generate a 3D grid with given size.
+
+    Reference:
+
+    - volshape_to_meshgrid of neuron
+      https://github.com/adalca/neurite/blob/legacy/neuron/utils.py
+
+      neuron modifies meshgrid to make it faster, however local
+      benchmark suggests tf.meshgrid is better
+
+    Note:
+
+    for tf.meshgrid, in the 3-D case with inputs of length M, N and P,
+    outputs are of shape (N, M, P) for ‘xy’ indexing and
+    (M, N, P) for ‘ij’ indexing.
+
+    :param grid_size: list or tuple of size 3, [dim1, dim2, dim3]
+    :return: shape = (dim1, dim2, dim3, 3),
+             grid[i, j, k, :] = [i j k]
+    """
+
+    # dim1, dim2, dim3 = grid_size
+    # mesh_grid has three elements, corresponding to i, j, k
+    # for i in range(dim1)
+    #     for j in range(dim2)
+    #         for k in range(dim3)
+    #             mesh_grid[0][i,j,k] = i
+    #             mesh_grid[1][i,j,k] = j
+    #             mesh_grid[2][i,j,k] = k
+    mesh_grid = tf.meshgrid(
+        tf.range(grid_size[0]),
+        tf.range(grid_size[1]),
+        tf.range(grid_size[2]),
+        indexing="ij",
+    )  # has three elements, each shape = (dim1, dim2, dim3)
+    grid = tf.stack(mesh_grid, axis=3)  # shape = (dim1, dim2, dim3, 3)
+    grid = tf.cast(grid, dtype=tf.float32)
+
+    return grid
 
 
 def gaussian_kernel1d(kernel_size: int) -> tf.Tensor:
