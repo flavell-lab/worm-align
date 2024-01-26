@@ -97,6 +97,7 @@ class LabelWarper(ImageWarper):
 def generate_labels(
         train_datasets: List[str],
         valid_datasets: List[str],
+        test_datasets: List[str],
         device_name: str,
         target_image_shape: Tuple[int, int, int],
         registration_problem_file: str,
@@ -115,8 +116,10 @@ def generate_labels(
     dataset_types = {
         "train": train_datasets,
         "valid": valid_datasets,
+        "test": test_datasets
     }
-    all_bad_problems = {"train": {}, "valid": {}}
+    all_bad_problems = {"train": {}, "valid": {}, "test": {}}
+    #json.load(open("resources/bad_registration_problems_ALv1.json"))
     for dataset_type, datasets in dataset_types.items():
         all_bad_problems[dataset_type] = generate_label(
                 datasets,
@@ -125,7 +128,7 @@ def generate_labels(
                 save_directory,
                 problem_dict
         )
-    write_to_json(all_bad_problems, "bad_registration_problems_ALv1")
+    #write_to_json(all_bad_problems, "bad_registration_problems_ALv1")
 
 def generate_label(
         datasets: List[str],
