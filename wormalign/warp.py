@@ -44,7 +44,8 @@ class ImageWarper:
         self.pairnum_dict = self._load_json(
                 "resources/problem_to_pairnum.json")
         # update `problem_id` and the corresponding pair number
-        self._update_problem()
+        if dataset_name and registration_problem:
+            self._update_problem()
 
     def _load_json(self, file_path: str):
         """Load JSON resources"""
