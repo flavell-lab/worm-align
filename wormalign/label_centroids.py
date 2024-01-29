@@ -15,41 +15,41 @@ class CentroidLabel:
         self.dataset_name = dataset_name
         self.dataset_path = dataset_path
 
-        self.save_path = f"{self.dataset_path}/{self.dataset_name}_centroid"
+        self.save_path = f"{self.dataset_path}/{self.dataset_name}"
         self._ensure_directory_exists(self.save_path)
 
-        self.fixed_label_path = \
-        f"{self.dataset_path}/{self.dataset_name}/fixed_labels.h5"
-        self.moving_label_path = \
-        f"{self.dataset_path}/{self.dataset_name}/moving_labels.h5"
+        self.fixed_roi_path = \
+        f"{self.dataset_path}/{self.dataset_name}/fixed_rois.h5"
+        self.moving_roi_path = \
+        f"{self.dataset_path}/{self.dataset_name}/moving_rois.h5"
 
     def write_labels(self, max_centroids: int = 200):
 
-        problems = list(h5py.File(self.moving_label_path, "r").keys())
+        problems = list(h5py.File(self.moving_roi_path, "r").keys())
 
         with h5py.File(f"{self.save_path}/moving_labels.h5", "w") as hdf5_m_file, \
                 h5py.File(f"{self.save_path}/fixed_labels.h5", "w") as hdf5_f_file:
 
             for problem in tqdm(problems):
 
-                fixed_label = self._read_label(self.fixed_label_path, problem)
-                moving_label = self._read_label(self.moving_label_path, problem)
+                fixed_roi = self._read_roi(self.fixed_roi_path, problem)
+                moving_roi = self._read_roi(self.moving_roi_path, problem)
 
                 fixed_centroids = self._compute_centroids_3d(
-                        fixed_label,
+                        fixed_roi,
                         max_centroids
                 )
                 moving_centroids = self._compute_centroids_3d(
-                        moving_label,
+                        moving_roi,
                         max_centroids
                 )
                 # IMPORTANT: flip moving and fixed labels
                 hdf5_m_file[problem] = fixed_centroids
                 hdf5_f_file[problem] = moving_centroids
 
-    def _read_label(self, label_path: str, key: str) -> NDArray[np.int32]:
+    def _read_roi(self, roi_path: str, key: str) -> NDArray[np.int32]:
 
-        return h5py.File(label_path, "r")[key][:]
+        return h5py.File(roi_path, "r")[key][:]
 
     def _ensure_directory_exists(self, path):
         """
