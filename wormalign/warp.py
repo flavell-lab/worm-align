@@ -89,10 +89,10 @@ class ImageWarper:
         Get image ROI.
         """
         roi_dict = self._preprocess_image_roi()
-        roi_dict["warped_moving_image_roi"] = self._warp_moving_image_roi(
-                roi_dict["euler_tfmed_moving_image_roi"]
-        )
-
+        if len(roi_dict) > 0:
+            roi_dict["warped_moving_image_roi"] = self._warp_moving_image_roi(
+                    roi_dict["euler_tfmed_moving_image_roi"]
+            )
         return roi_dict
 
     def _warp_moving_image_roi(
@@ -151,13 +151,13 @@ class ImageWarper:
         # resize the fixed and moving image ROIs
         resized_fixed_image_roi = self._resize_image_roi(
                 fixed_image_roi_path,
-                self.CM_dict[self.problem_id][1]
-                #self.CM_dict[self.problem_id]["fixed"]
+                #self.CM_dict[self.problem_id][1]
+                self.CM_dict[self.problem_id]["fixed"]
         )
         resized_moving_image_roi = self._resize_image_roi(
                 moving_image_roi_path,
-                self.CM_dict[self.problem_id][0]
-                #self.CM_dict[self.problem_id]["moving"]
+                #self.CM_dict[self.problem_id][0]
+                self.CM_dict[self.problem_id]["moving"]
         )
         euler_transformed_moving_image_roi = self._euler_transform_image_roi(
                 resized_moving_image_roi
