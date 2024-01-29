@@ -86,9 +86,9 @@ class CentroidLabel:
 
             # Compute the centroid if the value is present in the image
             if len(indices) > 0:
-                centroid_x = int(round(np.mean(indices[:, 0])))  # x-coordinate
-                centroid_y = int(round(np.mean(indices[:, 1])))  # y-coordinate
-                centroid_z = int(round(np.mean(indices[:, 2])))  # z-coordinate
+                centroid_x = np.mean(indices[:, 0])  # x-coordinate
+                centroid_y = np.mean(indices[:, 1])  # y-coordinate
+                centroid_z = np.mean(indices[:, 2])  # z-coordinate
                 centroids[val-1] = [centroid_x, centroid_y, centroid_z]
 
         return centroids
