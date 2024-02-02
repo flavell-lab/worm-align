@@ -14,7 +14,11 @@ jl.eval('include("adjust.jl")')
 ADJUST_IMAGE_SIZE = jl.eval("adjust_image_cm")
 
 
-def write_to_json(input_: Dict[str, Any], output_file: str):
+def write_to_json(
+    input_: Dict[str, Any], 
+    output_file: str,
+    folder: str = "resources"
+):
 
     """
     Write dictionary to .JSON file
@@ -28,10 +32,10 @@ def write_to_json(input_: Dict[str, Any], output_file: str):
                 return float(obj)
             return json.JSONEncoder.default(self, obj)
 
-    with open(f"resources/{output_file}.json", "w") as f:
+    with open(f"{folder}/{output_file}.json", "w") as f:
         json.dump(input_, f, indent=4, cls=CustomEncoder)
 
-    print(f"{output_file} written under resources.")
+    print(f"{output_file} written under {folder}.")
 
 
 def locate_dataset(dataset_name: str):
