@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from typing import Dict, List
+from typing import Dict, List, Optional
 from wormalign.utils import (locate_dataset, write_to_json)
 import os
 import random
@@ -13,6 +13,7 @@ class Sampler:
     def __init__(
         self,
         dataset_dict: Dict[str, List[str]],
+        problem_dict: Optional[Dict[str, Dict[str, List[str]]]] = None
     ):
         """
         Init.
@@ -22,8 +23,26 @@ class Sampler:
              "valid": ["YYYY-MM-DD-X"]
              "test": ["YYYY-MM-DD-X"]
             }
+        :param problem_dict: a dictionary of problems by dataset to subselect
+            from:
+            {
+                "train": {
+                    "2022-01-09-01": ["102to675", "104to288", ...], ...
+                },
+                "valid": {
+                    "2022-02-16-04": ["1022to1437", "1029to1372", ...], ...
+                },
+                "test": {
+                    "2022-04-14-04": ["1013to1212", "1021to1049", ...], ...
+                }
+            }
         """
-        self.dataset_dict = dataset_dict
+        if problem_dict == None:
+            self.dataset_dict = dataset_dict
+            self.problem_dict = None
+        elif dataset_dict == None:
+            self.problem_dict = problem_dict
+            self.dataset_dict = None
         self.output_dict = {
                 "train": dict(),
                 "valid": dict(),
@@ -79,6 +98,35 @@ class Sampler:
 
         return sampled_problems
 
+    def sample_from_datasets(self, output_file_name, num_problems):
+
+        for dataset_type, dataset_names in self.dataset_dict.items():
+
+            for dataset_name in tqdm(dataset_names):
+                problems = self._get_all_problems(dataset_name)
+                # sample accordings to the defined scheme if the number of
+                # samples per dataset is not specified
+                if num_problems == -1:
+                    sampled_problems = self._sample_registration_problems(problems)
+                else:
+                    sampled_problems = random.sample(problems, num_problems)
+                self.output_dict[dataset_type][dataset_name] = sampled_problems
+
+        write_to_json(self.output_dict, output_file_name)
+
+    def sample_from_problems(self, output_file_name, num_problems):
+
+        for dataset_type, dataset_names in self.problem_dict.items():
+
+            for dataset_name in tqdm(dataset_names):
+
+                sampled_problems = random.sample(
+                        self.problem_dict[dataset_type][dataset_name],
+                        num_problems)
+                self.output_dict[dataset_type][dataset_name] = sampled_problems
+
+        write_to_json(self.output_dict, output_file_name)
+
     def __call__(self, output_file_name, num_problems: int = -1):
         """
         Create a .JSON file that keeps all the regsitration problems.
@@ -95,17 +143,8 @@ class Sampler:
             >>> output_file_name = "registration_problems"
             >>> sampler(output_file_name)
         """
-        for dataset_type, dataset_names in self.dataset_dict.items():
-
-            for dataset_name in tqdm(dataset_names):
-                problems = self._get_all_problems(dataset_name)
-                # sample accordings to the defined scheme if the number of
-                # samples per dataset is not specified
-                if num_problems == -1:
-                    sampled_problems = self._sample_registration_problems(problems)
-                else:
-                    sampled_problems = random.sample(problems, num_problems)
-                self.output_dict[dataset_type][dataset_name] = sampled_problems
-
-        write_to_json(self.output_dict, output_file_name)
+        if self.problem_dict == None:
+            self.sample_from_datasets(output_file_name, num_problems)
+        elif self.dataset_dict == None:
+            self.sample_from_problems(output_file_name, num_problems)
 
