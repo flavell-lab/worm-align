@@ -7,12 +7,13 @@ from wormalign.utils import write_to_json
 from wormalign.warp import ImageWarper
 from wormalign.warp_label import LabelWarper
 import glob
-import numpy as np
 import h5py
+import numpy as np
 import tensorflow as tf
+import yaml
 
 
-def get_all_scores(test_dataset_path, network_output_path, target_image_shape):
+def get_all_scores(config_file_name, network_output_path, target_image_shape):
 
     image_warper = ImageWarper(
             network_output_path,
@@ -26,8 +27,13 @@ def get_all_scores(test_dataset_path, network_output_path, target_image_shape):
             target_image_shape,
     )
     label_warper.ddf_directory = network_output_path
-    #all_dataset_paths = glob.glob(f"{test_dataset_path}/*")
-    all_dataset_paths = [test_dataset_path]
+    with open(f"/data3/prj_register/2024-01-25-train/{config_file_name}.yaml", "r") as file:
+        config_dict = yaml.safe_load(file)
+    test_dataset_paths = config_dict["dataset"]["test"]["dir"]
+
+    org_centroid_distance = dict()
+    org_image_lncc = dict()
+    org_image_gncc = dict()
 
     centroid_distance = dict()
     image_lncc = dict()
@@ -45,14 +51,20 @@ def get_all_scores(test_dataset_path, network_output_path, target_image_shape):
     def get_scores_for_one_dataset(dataset_path):
 
         problems = list(h5py.File(f"{dataset_path}/fixed_images.h5").keys())
-        dataset_name = dataset_path.split("/")[-1].split("_")[0]
+        #dataset_name = dataset_path.split("/")[-1].split("_")[0]
+        dataset_name = dataset_path.split("/")[-1]
+        print(dataset_name)
         image_warper.dataset_name = dataset_name
         label_warper.dataset_name = dataset_name
+
+        org_centroid_distance[dataset_name] = dict()
+        org_image_lncc[dataset_name] = dict()
+        org_image_gncc[dataset_name] = dict()
+        nonrigid_penalty[dataset_name] = dict()
 
         centroid_distance[dataset_name] = dict()
         image_lncc[dataset_name] = dict()
         image_gncc[dataset_name] = dict()
-        nonrigid_penalty[dataset_name] = dict()
 
         for problem in tqdm(problems):
 
@@ -177,3 +189,13 @@ def calculate_dice_score(fixed, moving, threshold = 0):
     dice_score = np.sum(num) / np.sum(denom) * 2
 
     return dice_score
+
+
+if __name__ == "__main__":
+
+    network_output_path = \
+    "/data3/prj_register/2024-01-25-train/logs_predict/centroid_label_network_ckpt19_20240126-174927"
+
+    target_image_shape = (284, 120, 64)
+    get_all_scores(test_dataset_path, network_output_path, target_image_shape)
+
