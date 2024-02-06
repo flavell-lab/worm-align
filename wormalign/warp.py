@@ -1,7 +1,7 @@
 from euler_gpu.preprocess import initialize
 from euler_gpu.transform import transform_image_3d
 from numpy.typing import NDArray
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from wormalign.utils import (locate_dataset, get_cropped_image, get_image_T)
 import deepreg.model.layer as layer
 import json
@@ -19,7 +19,7 @@ class ImageWarper:
         dataset_name: str,
         registration_problem: str,
         image_shape: Tuple[int, int, int],
-        device_name: str = "cuda:0"
+        device_name: str = "cuda:2"
     ):
         """
         Init.
@@ -97,8 +97,9 @@ class ImageWarper:
 
     def _warp_moving_image_roi(
         self,
-        moving_image_roi: NDArray[np.float_]
-    ):
+        moving_image_roi: NDArray[np.float_],
+        input_ddf: Optional[NDArray[np.float32]] = None
+    ) -> NDArray[np.int32]:
         """
         Warp the moving image ROI with DDF.
         """
@@ -108,7 +109,10 @@ class ImageWarper:
         )
         warping = layer.Warping(fixed_image_size = self.image_shape,
                 interpolation = "nearest")
-        ddf = self.get_network_outputs("ddf")
+        if intput_ddf == None:
+            ddf = self.get_network_outputs("ddf")
+        else:
+            ddf = input_ddf
         warped_moving_image_roi_tf = warping(
                 inputs = [ddf, moving_image_roi_tf]
         )
