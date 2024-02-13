@@ -13,7 +13,8 @@ class Sampler:
     def __init__(
         self,
         dataset_dict: Dict[str, List[str]],
-        problem_dict: Optional[Dict[str, Dict[str, List[str]]]] = None
+        problem_dict: Optional[Dict[str, Dict[str, List[str]]]] = None,
+        diy_registration_problems: bool = False
     ):
         """
         Init.
@@ -43,11 +44,43 @@ class Sampler:
         elif dataset_dict == None:
             self.problem_dict = problem_dict
             self.dataset_dict = None
+
+        if diy_registration_problems:
+            self.neuron_roi_path = "/data1/prj_register/deepreg_labels"
+        else:
+            self.neuron_roi_path = None
+
         self.output_dict = {
                 "train": dict(),
                 "valid": dict(),
                 "test": dict()
         }
+
+    def create_problems_to_register(self, output_file_name, num_problems):
+        """
+        Randomly sample two distinct time points to register per dataset.
+        """
+        assert self.neuron_roi_path is not None, \
+            "Need to set `diy_registration_problems = True`"
+
+        for dataset_type, dataset_names in dataset_dict.items():
+
+            for dataset_name in dataset_names:
+                time_points = [
+                        int(f.split(".")[0]) for f in os.listdir(self.neuron_roi_path)
+                        if os.path.isfile(os.path.join(self.neuron_roi_path, f))
+                ]
+                fixed_time_points = random.choices(time_points, k = num_problems)
+                moving_time_points = random.choices(
+                        list(filter(lambda item: item not in fixed_time_points,
+                            time_points)), k = num_problems
+                )
+                self.output_dict[dataset_type][dataset_name] = [
+                        f"{moving_t}to{fixed_t}" for moving_t, fixed_t in
+                        list(zip(moving_time_points, fixed_time_points))
+                ]
+        write_to_json(self.output_dict, output_file_name)
+        print(f"{output_file_name} created!")
 
     def _get_all_problems(
         self,
