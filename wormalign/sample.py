@@ -63,13 +63,12 @@ class Sampler:
         assert self.neuron_roi_path is not None, \
             "Need to set `diy_registration_problems = True`"
 
-        for dataset_type, dataset_names in dataset_dict.items():
+        for dataset_type, dataset_names in self.dataset_dict.items():
 
-            for dataset_name in dataset_names:
-                time_points = [
-                        int(f.split(".")[0]) for f in os.listdir(self.neuron_roi_path)
-                        if os.path.isfile(os.path.join(self.neuron_roi_path, f))
-                ]
+            for dataset_name in tqdm(dataset_names):
+
+                nrrd_files = os.listdir(f"{self.neuron_roi_path}/{dataset_name}/img_roi_neurons")
+                time_points = [file.split(".")[0] for file in nrrd_files]
                 fixed_time_points = random.choices(time_points, k = num_problems)
                 moving_time_points = random.choices(
                         list(filter(lambda item: item not in fixed_time_points,
@@ -177,7 +176,10 @@ class Sampler:
             >>> sampler(output_file_name)
         """
         if self.problem_dict == None:
-            self.sample_from_datasets(output_file_name, num_problems)
+            if self.neuron_roi_path is not None:
+                self.create_problems_to_register(output_file_name, num_problems)
+            else:
+                self.sample_from_datasets(output_file_name, num_problems)
         elif self.dataset_dict == None:
             self.sample_from_problems(output_file_name, num_problems)
 
