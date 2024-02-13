@@ -20,9 +20,9 @@ class Sampler:
         Init.
 
         :param dataset_dict: dataset dictionary formated as:
-            {"train": ["YYYY-MM-DD-X"],
-             "valid": ["YYYY-MM-DD-X"]
-             "test": ["YYYY-MM-DD-X"]
+            {"train": ["YYYY-MM-DD-X", ...],
+             "valid": ["YYYY-MM-DD-X", ...]
+             "test": ["YYYY-MM-DD-X", ...]
             }
         :param problem_dict: a dictionary of problems by dataset to subselect
             from:
