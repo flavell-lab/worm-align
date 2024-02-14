@@ -160,15 +160,19 @@ class RegistrationProcessor:
         self,
         target_image_shape: Tuple[int, int, int],
         save_directory: str,
+        problem_file: str,
         batch_size: int = 200,
         device_name: str = "cuda:2",
         downsample_factor: int = 4,
+        euler_search = True
     ):
         """
         Init.
 
         :param target_image_shape: shape of the image (x_dim, y_dim, z_dim)
         :param save_directory: the directory to save the registered images
+        :param registration_problem_file: name of the JSON file that keeps all
+            the registration problems for training, validation, and testing
         :param batch_size: the size of a batch to process with Euler-GPU
         :param device name
         :param downsample_factor: factor to downsample the images during grid
@@ -176,6 +180,7 @@ class RegistrationProcessor:
         """
         self.target_image_shape = target_image_shape
         self.save_directory = save_directory
+        self.problem_file = problem_file
         self.batch_size = batch_size
         self.device_name = device_name
         self.downsample_factor = downsample_factor
@@ -183,8 +188,10 @@ class RegistrationProcessor:
         self.euler_parameters_dict = dict()
         self.outcomes = dict()
         self.CM_dict = dict()
-        self.memory_dict_xy, self._memory_dict_xy = \
-                self._initialize_memory_dict()
+
+        if euler_search:
+            self.memory_dict_xy, self._memory_dict_xy = \
+                    self._initialize_memory_dict()
 
         self._ensure_directory_exists(self.save_directory)
 
@@ -195,7 +202,7 @@ class RegistrationProcessor:
         :param path: directory to create if does not exist
         """
         if not os.path.exists(path):
-            os.mkdir(path)
+            os.makedirs(path)
 
     def _initialize_memory_dict(self):
         """
@@ -266,17 +273,12 @@ class RegistrationProcessor:
             >>> )
             >>> processor.process_datasets()
         """
-        with open("resources/registration_problems.json", 'r') as f:
-            registration_problem_dict = json.load(f)
+        with open(f"resources/{self.problem_file}.json", 'r') as f:
+            problem_dicts = json.load(f)
 
-        for dataset_type, problem_dict in registration_problem_dict.items():
-
+        for dataset_type, problem_dict in problem_dicts.items():
             # process training, validation, and testing datasets respectively
             self.process_dataset_type(dataset_type, problem_dict)
-
-        write_to_json(self.outcomes, "eulergpu_outcomes")
-        write_to_json(self.CM_dict, "center_of_mass")
-        write_to_json(self.euler_parameters_dict, "euler_parameters")
 
     def process_dataset_type(
         self,
@@ -305,6 +307,11 @@ class RegistrationProcessor:
                     problems,
                     f"{dataset_type_dir}/nonaugmented"
             )
+            write_to_json(self.outcomes, "eulergpu_outcomes_ALv2_add1")
+            write_to_json(self.CM_dict, "center_of_mass_ALv2_add1")
+            write_to_json(self.euler_parameters_dict,
+                    "euler_parameters_ALv2_add1")
+
 
     def process_dataset(
         self,
@@ -321,20 +328,30 @@ class RegistrationProcessor:
         """
         save_path = f"{dataset_type_dir}/{dataset_name}"
         self._ensure_directory_exists(save_path)
-        hdf5_m_file = h5py.File(f'{save_path}/moving_images.h5', 'w')
-        hdf5_f_file = h5py.File(f'{save_path}/fixed_images.h5', 'w')
         dataset_path = locate_dataset(dataset_name)
 
-        for problem in tqdm(problems):
-            problem_id = f"{dataset_name}/{problem}"
-            self.process_problem(
-                    problem_id,
-                    dataset_path,
-                    hdf5_m_file,
-                    hdf5_f_file
-            )
-        hdf5_m_file.close()
-        hdf5_f_file.close()
+        with h5py.File(f'{save_path}/moving_images.h5', 'w') as hdf5_m_file, \
+            h5py.File(f'{save_path}/fixed_images.h5', 'w') as hdf5_f_file:
+
+            for problem in tqdm(problems):
+                problem_id = f"{dataset_name}/{problem}"
+                # TODO: delete prints
+                #print(problem_id)
+                processed_image_dict = self.process_problem(
+                        problem_id,
+                        dataset_path,
+                        hdf5_m_file,
+                        hdf5_f_file,
+                        simply_crop=True
+                )
+                hdf5_f_file.create_dataset(
+                        problem,
+                        data = processed_image_dict["fixed_image"]
+                )
+                hdf5_m_file.create_dataset(
+                        problem,
+                        data = processed_image_dict["moving_image"]
+                )
 
     def process_problem(
         self,
@@ -342,9 +359,77 @@ class RegistrationProcessor:
         dataset_path: str,
         hdf5_m_file: h5py.File,
         hdf5_f_file: h5py.File,
+        simply_crop: bool = False
+    ):
+        if simply_crop:
+            return self.simply_crop(
+                    problem_id,
+                    dataset_path,
+                    hdf5_m_file,
+                    hdf5_f_file
+            )
+        else:
+            return self.crop_and_transform(
+                    problem_id,
+                    dataset_path,
+                    hdf5_m_file,
+                    hdf5_f_file
+            )
+
+    def simply_crop(
+        self,
+        problem_id: str,
+        dataset_path: str,
+        hdf5_m_file: h5py.File,
+        hdf5_f_file: h5py.File,
     ):
         """
-        Euler-transform the moving image from a given registration problem.
+        Preprocessing images by simply adjusting fixed and moving image sizes
+        without Euler transformation.
+
+        :param problem_id: ID that identifies the dataset name and problem name
+        :param dataset_path: the path to save the dataset
+        :param hdf5_m_file: hdf5 File that keeps the moving images
+        :param hdf5_f_file: hdf5 File that keeps the fixed images
+        """
+        t_moving, t_fixed = problem_id.split('/')[1].split('to')
+        t_moving_4 = t_moving.zfill(4)
+        t_fixed_4 = t_fixed.zfill(4)
+        fixed_image_path = glob.glob(
+                f'{dataset_path}/NRRD_filtered/*_t{t_fixed_4}_ch2.nrrd'
+        )[0]
+        moving_image_path = glob.glob(
+                f'{dataset_path}/NRRD_filtered/*_t{t_moving_4}_ch2.nrrd'
+        )[0]
+        fixed_image_T = get_image_T(fixed_image_path)
+        fixed_image_median = np.median(fixed_image_T)
+        moving_image_T = get_image_T(moving_image_path)
+        moving_image_median = np.median(moving_image_T)
+        resized_fixed_image_xyz = filter_and_crop(
+                fixed_image_T,
+                fixed_image_median,
+                self.target_image_shape
+        )
+        resized_moving_image_xyz = filter_and_crop(
+                moving_image_T,
+                moving_image_median,
+                self.target_image_shape
+        )
+        return {
+            "fixed_image": resized_fixed_image_xyz,
+            "moving_image": resized_moving_image_xyz
+        }
+
+    def crop_and_transform(
+        self,
+        problem_id: str,
+        dataset_path: str,
+        hdf5_m_file: h5py.File,
+        hdf5_f_file: h5py.File,
+    ):
+        """
+        Resize both fixed and moving images to the target shape, and ehn
+        Euler-transform the moving image of a given registration problem.
 
         :param problem_id: ID that identifies the dataset name and problem name
         :param dataset_path: the path to save the dataset
@@ -363,11 +448,13 @@ class RegistrationProcessor:
         moving_image_path = glob.glob(
                 f'{dataset_path}/NRRD_filtered/*_t{t_moving_4}_ch2.nrrd'
         )[0]
-        fixed_image_T = get_image_T(fixed_image_path)
+        fixed_image_T = get_image_T(fixed_image_path).astype(int)
         fixed_image_median = np.median(fixed_image_T)
-        moving_image_T = get_image_T(moving_image_path)
+        moving_image_T = get_image_T(moving_image_path).astype(int)
         moving_image_median = np.median(moving_image_T)
-
+        # TODO: delete prints
+        #print(np.unique(moving_image_T), type(moving_image_T[0,0,0]))
+        #print(np.unique(fixed_image_T), type(fixed_image_T[0,0,0]))
         resized_fixed_image_xyz = filter_and_crop(
                 fixed_image_T,
                 fixed_image_median,
@@ -443,3 +530,8 @@ class RegistrationProcessor:
                     transformed_moving_image_xyz.max(1)
                 ).item()
         self.outcomes[problem_id]["registered_image_xyz_gncc"] = gncc
+
+        return {
+            "fixed_image": resized_fixed_image_xyz,
+            "moving_image": transformed_moving_image_xyz
+        }
