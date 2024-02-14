@@ -184,12 +184,13 @@ class RegistrationProcessor:
         self.batch_size = batch_size
         self.device_name = device_name
         self.downsample_factor = downsample_factor
+        self.euler_search = euler_search
 
         self.euler_parameters_dict = dict()
         self.outcomes = dict()
         self.CM_dict = dict()
 
-        if euler_search:
+        if self.euler_search:
             self.memory_dict_xy, self._memory_dict_xy = \
                     self._initialize_memory_dict()
 
@@ -298,20 +299,22 @@ class RegistrationProcessor:
             }
         """
         dataset_type_dir = f"{self.save_directory}/{dataset_type}"
-        self._ensure_directory_exists(dataset_type_dir)
         self._ensure_directory_exists(f"{dataset_type_dir}/nonaugmented")
+
         for dataset_name, problems in problem_dict.items():
+
             print(f"=====Processing {dataset_name} in {dataset_type}=====")
             self.process_dataset(
                     dataset_name,
                     problems,
                     f"{dataset_type_dir}/nonaugmented"
             )
-            write_to_json(self.outcomes, "eulergpu_outcomes_ALv2_add1")
-            write_to_json(self.CM_dict, "center_of_mass_ALv2_add1")
-            write_to_json(self.euler_parameters_dict,
-                    "euler_parameters_ALv2_add1")
-
+            if self.euler_search:
+                tag = self.problem_file.split("_")[-1]
+                write_to_json(self.outcomes, f"eulergpu_outcomes_{tag}")
+                write_to_json(self.CM_dict, f"center_of_mass_{tag}")
+                write_to_json(self.euler_parameters_dict,
+                              f"euler_parameters_{tag}")
 
     def process_dataset(
         self,
