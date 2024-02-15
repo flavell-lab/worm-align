@@ -19,17 +19,21 @@ class ImageWarper:
         dataset_name: str,
         registration_problem: str,
         image_shape: Tuple[int, int, int],
-        device_name: str = "cuda:2"
+        problem_file: str,
+        device_name: str = "cuda:2",
+        simply_crop: bool = False,
     ):
         """
         Init.
 
         :param ddf_directory: directory to the DDF outputs; e.g.,
             "/home/alicia/data_personal/logs_predict/ddf_model_20231116-134048"
-        :dataset_name: name of the dataset containing the registration problem
-        :registration_problem: problem to be registered
-        :image_shape: the uniform image shape that the network takes in the
+        :param dataset_name: name of the dataset containing the registration problem
+        :param registration_problem: problem to be registered
+        :param image_shape: the uniform image shape that the network takes in the
             order of (x_dim, y_dim, z_dim)
+        :param problem_file: name of the JSON file that keeps the train, valid,
+            test problems
         :device_name: CUDA device to run Euler-GPU; e.g., "cuda:0" (default)
         """
         self.ddf_directory = ddf_directory
@@ -37,12 +41,20 @@ class ImageWarper:
         self._registration_problem = registration_problem
         self.image_shape = image_shape
         self.device = torch.device(device_name)
-        self.CM_dict = self._load_json(
-                "resources/center_of_mass_ALv1.json")
-        self.euler_parameters_dict = self._load_json(
-                "resources/euler_parameters_ALv1.json")
-        self.pairnum_dict = self._load_json(
-                "resources/problem_to_pairnum.json")
+        tag = problem_file.split("_")[-1]
+
+        if simply_crop:
+            self.CM_dict = self._load_json(
+                    f"resources/center_of_mass_{tag}.json")
+        else:
+            self.CM_dict = self._load_json(
+                    f"resources/center_of_mass_{tag}.json")
+            self.euler_parameters_dict = self._load_json(
+                    f"resources/euler_parameters_{tag}.json")
+            self.pairnum_dict = self._load_json(
+                    "resources/problem_to_pairnum_ALv1.json")
+
+        # if `dataset_name` and `registration_problem` are both provided
         # update `problem_id` and the corresponding pair number
         if dataset_name and registration_problem:
             self._update_problem()
@@ -107,6 +119,7 @@ class ImageWarper:
                 tf.expand_dims(moving_image_roi, axis=0),
                 dtype=tf.float32
         )
+        # TODO: set `batch_size` required by the latest centroid_label network
         warping = layer.Warping(fixed_image_size = self.image_shape,
                 interpolation = "nearest")
         if intput_ddf == None:
