@@ -9,31 +9,43 @@ class CentroidLabel:
 
     def __init__(
         self,
-        dataset_name: str,
         dataset_path: str,
     ):
-        self.dataset_name = dataset_name
         self.dataset_path = dataset_path
 
-        self.save_path = f"{self.dataset_path}/{self.dataset_name}"
-        self._ensure_directory_exists(self.save_path)
+    def create_all_labels(self):
 
-        self.fixed_roi_path = \
-        f"{self.dataset_path}/{self.dataset_name}/fixed_rois.h5"
-        self.moving_roi_path = \
-        f"{self.dataset_path}/{self.dataset_name}/moving_rois.h5"
+        train_dataset_names = \
+        os.listdir(f"{self.dataset_path}/train/nonaugmented")
+        valid_dataset_names = \
+        os.listdir(f"{self.dataset_path}/valid/nonaugmented")
 
-    def write_labels(self, max_centroids: int = 200):
+        for dataset_name in train_dataset_names:
+            self.create_one_dataset_labels(dataset_name, "train")
+        for dataset_name in valid_dataset_names:
+            self.create_one_dataset_labels(dataset_name, "valid")
 
-        problems = list(h5py.File(self.moving_roi_path, "r").keys())
+    def create_one_dataset_labels(
+        self,
+        dataset_name: str,
+        dataset_type: str,
+        max_centroids: int = 200
+    ):
+        save_directory = f"{self.dataset_path}/{dataset_type}/nonaugmented/{dataset_name}"
+        self._ensure_directory_exists(save_directory)
 
-        with h5py.File(f"{self.save_path}/moving_labels.h5", "w") as hdf5_m_file, \
-                h5py.File(f"{self.save_path}/fixed_labels.h5", "w") as hdf5_f_file:
+        fixed_roi_path = f"{save_directory}/fixed_rois.h5"
+        moving_roi_path = f"{save_directory}/moving_rois.h5"
+
+        problems = list(h5py.File(moving_roi_path, "r").keys())
+
+        with h5py.File(f"{save_directory}/moving_labels.h5", "w") as hdf5_m_file, \
+                h5py.File(f"{save_directory}/fixed_labels.h5", "w") as hdf5_f_file:
 
             for problem in tqdm(problems):
 
-                fixed_roi = self._read_roi(self.fixed_roi_path, problem)
-                moving_roi = self._read_roi(self.moving_roi_path, problem)
+                fixed_roi = self._read_roi(fixed_roi_path, problem)
+                moving_roi = self._read_roi(moving_roi_path, problem)
 
                 fixed_centroids = self._compute_centroids_3d(
                         fixed_roi,
@@ -94,12 +106,9 @@ class CentroidLabel:
         return centroids
 
 
-def main(dataset_name, dataset_path):
-
-    centroid_labeler = CentroidLabel(dataset_name, dataset_path)
-    centroid_labeler.write_labels()
-
 if __name__ == "__main__":
 
-    main("2022-01-27-01_subset", "/data1/prj_register")
+    dataset_path = "/data3/prj_register/ALv3"
+    centroid_labeler = CentroidLabel(dataset_path)
+    centroid_labeler.create_all_labels()
 
