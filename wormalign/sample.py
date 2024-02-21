@@ -79,7 +79,6 @@ class Sampler:
                         list(zip(moving_time_points, fixed_time_points))
                 ]
         write_to_json(self.output_dict, output_file_name)
-        print(f"{output_file_name} created!")
 
     def _get_all_problems(
         self,
