@@ -116,8 +116,10 @@ class DDFNetworkTester:
         self.cuda_device = cuda_device
         self.checkpoint = checkpoint
         self.gpu_growth = gpu_growth
+        #self.checkpoint_path = \
+        #    f"{self.log_directory}/logs_train/{self.trained_ddf_model}/save/ckpt-{self.checkpoint}"
         self.checkpoint_path = \
-            f"{self.log_directory}/logs_train/{self.trained_ddf_model}/save/ckpt-{self.checkpoint}"
+        f"{self.log_directory}/{self.trained_ddf_model}/save/ckpt-{self.checkpoint}"
 
     def __call__(
         self,
