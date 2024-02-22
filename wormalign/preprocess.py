@@ -407,16 +407,28 @@ class RegistrationProcessor:
         fixed_image_median = np.median(fixed_image_T)
         moving_image_T = get_image_T(moving_image_path)
         moving_image_median = np.median(moving_image_T)
-        resized_fixed_image_xyz = filter_and_crop(
-                fixed_image_T,
-                fixed_image_median,
-                self.target_image_shape
-        )
-        resized_moving_image_xyz = filter_and_crop(
-                moving_image_T,
-                moving_image_median,
-                self.target_image_shape
-        )
+
+        try:
+            resized_fixed_image_xyz = filter_and_crop(
+                    fixed_image_T,
+                    fixed_image_median,
+                    self.target_image_shape
+            )
+            resized_moving_image_xyz = filter_and_crop(
+                    moving_image_T,
+                    moving_image_median,
+                    self.target_image_shape
+            )
+
+        except Exception as e:
+            print(f"an error occured: {e}")
+            # log the CMs for later cropping ROI labels
+            return {}
+
+        self.CM_dict[problem_id] = {
+            "moving": get_image_CM(moving_image_T),
+            "fixed": get_image_CM(fixed_image_T)
+        }
         return {
             "fixed_image": resized_fixed_image_xyz,
             "moving_image": resized_moving_image_xyz
