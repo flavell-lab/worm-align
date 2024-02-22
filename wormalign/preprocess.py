@@ -309,12 +309,14 @@ class RegistrationProcessor:
                     problems,
                     f"{dataset_type_dir}/nonaugmented"
             )
+            tag = self.problem_file.split("_")[-1]
             if self.euler_search:
-                tag = self.problem_file.split("_")[-1]
                 write_to_json(self.outcomes, f"eulergpu_outcomes_{tag}")
                 write_to_json(self.CM_dict, f"center_of_mass_{tag}")
                 write_to_json(self.euler_parameters_dict,
                               f"euler_parameters_{tag}")
+            else:
+                write_to_json(self.CM_dict, f"center_of_mass_{tag}")
 
     def process_dataset(
         self,
@@ -338,23 +340,21 @@ class RegistrationProcessor:
 
             for problem in tqdm(problems):
                 problem_id = f"{dataset_name}/{problem}"
-                # TODO: delete prints
-                #print(problem_id)
                 processed_image_dict = self.process_problem(
                         problem_id,
                         dataset_path,
                         hdf5_m_file,
                         hdf5_f_file,
-                        simply_crop=True
                 )
-                hdf5_f_file.create_dataset(
+                if len(processed_image_dict) != 0:
+                    hdf5_f_file.create_dataset(
                         problem,
                         data = processed_image_dict["fixed_image"]
-                )
-                hdf5_m_file.create_dataset(
+                    )
+                    hdf5_m_file.create_dataset(
                         problem,
                         data = processed_image_dict["moving_image"]
-                )
+                    )
 
     def process_problem(
         self,
@@ -362,9 +362,8 @@ class RegistrationProcessor:
         dataset_path: str,
         hdf5_m_file: h5py.File,
         hdf5_f_file: h5py.File,
-        simply_crop: bool = False
     ):
-        if simply_crop:
+        if not self.euler_search:
             return self.simply_crop(
                     problem_id,
                     dataset_path,
@@ -455,9 +454,6 @@ class RegistrationProcessor:
         fixed_image_median = np.median(fixed_image_T)
         moving_image_T = get_image_T(moving_image_path).astype(int)
         moving_image_median = np.median(moving_image_T)
-        # TODO: delete prints
-        #print(np.unique(moving_image_T), type(moving_image_T[0,0,0]))
-        #print(np.unique(fixed_image_T), type(fixed_image_T[0,0,0]))
         resized_fixed_image_xyz = filter_and_crop(
                 fixed_image_T,
                 fixed_image_median,
