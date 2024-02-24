@@ -42,7 +42,6 @@ class ImageWarper:
         self.image_shape = image_shape
         self.device = torch.device(device_name)
         tag = problem_file.split("_")[-1]
-
         if simply_crop:
             self.CM_dict = self._load_json(
                     f"resources/center_of_mass_{tag}.json")
