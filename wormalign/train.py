@@ -1,17 +1,15 @@
 from deepreg.callback import build_checkpoint_callback
-from deepreg.model import layer, layer_util
+from deepreg.predict import normalize_batched_image
 from deepreg.registry import REGISTRY
 from deepreg.util import build_dataset
-import deepreg.loss as loss
 import deepreg.model.optimizer as opt
-import deepreg.predict as predict, normalize_batched_image
 import deepreg.train as train
 import tensorflow as tf
 
-config_path = "/data3/prj_register/2024-03-01-train/config_batch.yaml"
-log_dir = "/data3/prj_register/2024-03-01-train"
+config_path = "/data3/prj_register/2024-03-08-train-2I/config_batch.yaml"
+log_dir = "/data3/prj_register/2024-03-08-train-2I"
 ckpt_path = ""
-exp_name = "centroid_gncc"
+exp_name = "centroid_labels_augmented_batched_hybrid"
 max_epochs = 300
 
 config, log_dir, ckpt_path = train.build_config(
@@ -78,4 +76,3 @@ history = model.fit(
     validation_steps=steps_per_epoch_val,
     callbacks=callbacks,
 )
-
