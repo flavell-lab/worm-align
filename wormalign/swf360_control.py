@@ -1,6 +1,7 @@
 from deepreg.predict import unwrapped_predict
 from tqdm import tqdm
 from wormalign.utils import get_image_T, write_to_json, filter_and_crop
+import deepreg.model.layer as layer
 import numpy as np
 import os
 import tensorflow as tf
@@ -106,7 +107,6 @@ def register_single_image_pair(
 
         return moving_image, fixed_image
 
-
     def compute_score(score_class, *args):
 
         if len(args) == 2:
@@ -120,7 +120,8 @@ def register_single_image_pair(
         return tf.convert_to_tensor(
                 numpy_array[np.newaxis, ...].astype(np.float32))
 
-    def _warp_with_ddf(problem, fixed_image, moving_image):
+    def _warp_ch2_with_ddf(problem, fixed_image, moving_image):
+
         batched_fixed_image = normalize_batched_image(
             np.expand_dims(fixed_image, axis=0)
         )
@@ -154,13 +155,47 @@ def register_single_image_pair(
             "warped_moving_image": pred_fixed_image.squeeze(),
             "raw_ncc": raw_ncc,
             "ncc": ncc,
+            "ddf": ddf_output
+        }
+
+    def _warp_ch1_with_ddf(problem, ch2_ddf, fixed_image, moving_image):
+
+        batched_fixed_image = normalize_batched_image(
+            np.expand_dims(fixed_image, axis=0)
+        )
+        batched_moving_image = normalize_batched_image(
+            np.expand_dims(moving_image, axis=0)
+        )
+        warping = layer.Warping(
+            fixed_image_size=batched_fixed_image.shape[1:4],
+            batch_size=1
+        )
+        warped_moving_image = warping(inputs=[ch2_ddf, batched_moving_image])
+        raw_ncc = calculate_ncc(
+            batched_moving_image.numpy().squeeze(),
+            batched_fixed_image.numpy().squeeze()
+        )
+        ncc = calculate_ncc(
+            warped_moving_image.numpy().squeeze(),
+            batched_fixed_image.numpy().squeeze()
+        )
+
+        return {
+            "fixed_image": fixed_image,
+            "moving_image": moving_image,
+            "warped_moving_image": warped_moving_image.numpy().squeeze(),
+            "raw_ncc": raw_ncc,
+            "ncc": ncc
         }
 
     all_outputs = {"ch1": dict(), "ch2": dict()}
-    moving_image, fixed_image = read_ch1_problem(problem)
-    all_outputs["ch1"] = _warp_with_ddf(problem, fixed_image, moving_image)
-    moving_image, fixed_image = read_ch2_problem(problem)
-    all_outputs["ch2"] = _warp_with_ddf(problem, fixed_image, moving_image)
+
+    ch2_moving_image, ch2_fixed_image = read_ch2_problem(problem)
+    all_outputs["ch2"] = _warp_ch2_with_ddf(problem, ch2_fixed_image, ch2_moving_image)
+
+    ch1_moving_image, ch1_fixed_image = read_ch1_problem(problem)
+    all_outputs["ch1"] = _warp_ch1_with_ddf(problem, all_outputs["ch2"]["ddf"],
+            ch1_fixed_image, ch1_moving_image)
 
     return all_outputs
 
@@ -179,15 +214,13 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             {experiment} ch2 NCC: {'{:.2f}'.format(outputs_dict['ch2']['ncc'])}"""
         )
 
-    problems = get_swf360_problems()
-
     ncc_score_dict = dict()
     every_ncc_score_dict = dict()
 
     base = "/data3/prj_register"
     subdirectory = "centroid_labels_augmented_batched_hybrid"
-    print(len(problems))
-    print(problems[:100])
+
+    problems = get_swf360_problems()
     for problem in problems:
 
         full_network_outputs = register_single_image_pair(
@@ -226,7 +259,7 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
                 control_network_outputs["ch2"]["ncc"]
             ]
         }
-        write_to_json(every_ncc_score_dict, "swf360_every_score", "scores")
+        write_to_json(every_ncc_score_dict, "swf360_every_score_corr", "scores")
 
         if condition:
             ncc_score_dict[problem] = {
@@ -239,6 +272,6 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
                     control_network_outputs["ch2"]["ncc"]
                 ]
             }
-            write_to_json(ncc_score_dict, "swf360_condition_met", "scores")
+            write_to_json(ncc_score_dict, "swf360_condition_met_corr", "scores")
 
 find_problems_meet_criteria("2024-01-30-train", "2024-03-08-train")
