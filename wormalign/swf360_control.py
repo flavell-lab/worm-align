@@ -182,6 +182,7 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
     problems = get_swf360_problems()
 
     ncc_score_dict = dict()
+    every_ncc_score_dict = dict()
 
     base = "/data3/prj_register"
     subdirectory = "centroid_labels_augmented_batched_hybrid"
@@ -195,7 +196,8 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             target_label_shape=(200, 3),
             model_ckpt_path=f"{base}/{full_experiment}/{subdirectory}/save/ckpt-{ckpt}",
             model_config_path=f"{base}/{full_experiment}/config_batch.yaml",
-            output_dir="")
+            output_dir="/data3/prj_register/2024-02-15_debug"
+        )
 
         control_network_outputs = register_single_image_pair(
             problem,
@@ -203,7 +205,7 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             target_label_shape=(200, 3),
             model_ckpt_path=f"{base}/{control_experiment}/{subdirectory}/save/ckpt-{ckpt}",
             model_config_path=f"{base}/{control_experiment}/config_batch.yaml",
-            output_dir="",
+            output_dir="/data3/prj_register/2024-02-15_debug"
         )
 
         condition = control_network_outputs["ch1"]["ncc"] < 0.8 and \
@@ -211,8 +213,20 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             full_network_outputs["ch1"]["ncc"] > 0.9 and \
             full_network_outputs["ch2"]["ncc"] > 0
 
-        _print_score(full_experiment, outputs_dict)
-        _print_score(control_experiment, outputs_dict)
+        _print_score(full_experiment, full_network_outputs)
+        _print_score(control_experiment, control_network_outputs)
+
+        every_ncc_score_dict[problem] = {
+            "full": [
+                full_network_outputs["ch1"]["ncc"],
+                full_network_outputs["ch2"]["ncc"]
+            ],
+            "control": [
+                control_network_outputs["ch1"]["ncc"],
+                control_network_outputs["ch2"]["ncc"]
+            ]
+        }
+        write_to_json(every_ncc_score_dict, "swf360_every_score", "scores")
 
         if condition:
             ncc_score_dict[problem] = {
@@ -225,6 +239,6 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
                     control_network_outputs["ch2"]["ncc"]
                 ]
             }
-            write_to_json(ncc_dict, "swf360_condition_met", "scores")
+            write_to_json(ncc_score_dict, "swf360_condition_met", "scores")
 
 find_problems_meet_criteria("2024-01-30-train", "2024-03-08-train")
