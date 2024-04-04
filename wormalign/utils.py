@@ -10,7 +10,7 @@ import numpy as np
 import os
 
 jl = Julia(compiled_modules=False)
-jl.eval('include("adjust.jl")')
+jl.eval('include("/home/alicia/notebook/worm-align/wormalign/adjust.jl")')
 ADJUST_IMAGE_SIZE = jl.eval("adjust_image_cm")
 
 
