@@ -1,6 +1,7 @@
 from typing import Tuple
-import wormalign.benchmark_utils as utils
+import numpy as np
 import tensorflow as tf
+import wormalign.benchmark_utils as utils
 
 EPS = 1.0e-5
 
