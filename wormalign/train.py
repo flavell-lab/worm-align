@@ -6,11 +6,15 @@ import deepreg.model.optimizer as opt
 import deepreg.train as train
 import tensorflow as tf
 
-config_path = "/data3/prj_register/2024-03-08-train-2I/config_batch.yaml"
-log_dir = "/data3/prj_register/2024-03-08-train-2I"
+max_epochs = 300
+initial_epoch = 1
+
+experiment_dir = "2024-03-30-train"
+config_path = f"/data3/prj_register/{experiment_dir}/config_batch.yaml"
+log_dir = f"/data3/prj_register/{experiment_dir}"
+#ckpt_path = f"{log_dir}/centroid_labels_augmented_batched_hybrid/save/ckpt-{initial_epoch}"
 ckpt_path = ""
 exp_name = "centroid_labels_augmented_batched_hybrid"
-max_epochs = 300
 
 config, log_dir, ckpt_path = train.build_config(
     config_path=config_path,
@@ -70,7 +74,7 @@ callbacks = [tensorboard_callback, ckpt_callback]
 history = model.fit(
     x=dataset_train,
     steps_per_epoch=steps_per_epoch_train,
-    initial_epoch=1,
+    initial_epoch=initial_epoch,
     epochs=config["train"]["epochs"],
     validation_data=dataset_val,
     validation_steps=steps_per_epoch_val,
