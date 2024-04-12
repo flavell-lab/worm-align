@@ -182,25 +182,3 @@ class Sampler:
         elif self.dataset_dict == None:
             self.sample_from_problems(output_file_name, num_problems)
 
-
-def extract_all_problems(
-    dataset_name: str,
-    problem_file_path: str
-):
-    """Read all registration problems and write to a .JSON file with formatting
-    `<MOVING>to<FIXED>`"""
-    if os.path.exists(f"{problem_file_path}/registration_problems.txt"):
-        lines = open(
-            f"{problem_file_path}/registration_problems.txt", "r").readlines()
-        problems = [line.strip().replace(" ", "to") for line in lines]
-    else:
-        raise FileNotFoundError(
-            f"Can't find {dataset_path}/registration_problems.txt")
-
-    write_to_json(
-        {"train": {dataset_name: problems}},
-        "registration_problems_swf360"
-    )
-
-extract_all_problems("2022-01-06-01",
-    "/data3/adam/SWF360_test_datasets/2022-01-06-01-SWF360-animal1-610LP_newunet_output")

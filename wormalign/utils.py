@@ -177,3 +177,23 @@ def get_image_CM(image_T: np.ndarray) -> Tuple[int, int, int]:
 
     return (round(x), round(y), round(z))
 
+
+def extract_all_problems(
+    dataset_name: str,
+    problem_file_path: str
+):
+    """Read all registration problems and write to a .JSON file with formatting
+    `<MOVING>to<FIXED>`"""
+    if os.path.exists(f"{problem_file_path}/registration_problems.txt"):
+        lines = open(
+            f"{problem_file_path}/registration_problems.txt", "r").readlines()
+        problems = [line.strip().replace(" ", "to") for line in lines]
+    else:
+        raise FileNotFoundError(
+            f"Can't find {dataset_path}/registration_problems.txt")
+
+    write_to_json(
+        {"train": {dataset_name: problems}},
+        "registration_problems_swf360"
+    )
+
