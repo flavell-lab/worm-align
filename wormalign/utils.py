@@ -45,6 +45,18 @@ def locate_dataset(dataset_name: str):
 
     :param dataset_name: name of the dataset; e.g. `2022-03-16-02`
     """
+    swf360_path = "/data3/adam/SWF360_test_datasets"
+    if dataset_name == "2022-01-06-01":
+        return \
+        f"{swf360_path}/{dataset_name}-SWF360-animal1-610LP_newunet_output"
+    elif dataset_name == "2022-03-30-01":
+        return f"{swf360_path}/{dataset_name}-SWF360-animal1-610LP_output"
+    elif dataset_name == "2022-03-30-02":
+        return \
+        f"{swf360_path}/{dataset_name}-SWF360-animal2-610LP_diffnorm_ckpt287"
+    elif dataset_name == "2022-03-31-01":
+        return f"{swf360_path}/{dataset_name}-SWF360-animal1-610LP_output"
+
     neuropal_dir = "/data1/prj_neuropal/data_processed"
     kfc_dir = "/data1/prj_kfc/data_processed"
     rim_dir = "/data3/prj_rim/data_processed"
