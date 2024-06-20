@@ -70,6 +70,19 @@ def compute_centroid_labels(image, max_centroids = 200):
 
     return centroids
 
+def read_problem_h5(
+    problem,
+    channel_num,
+):
+    dataset_path = \
+    f"/data3/prj_register/ALv7_swf360_ch{channel_num}/train/nonaugmented/2022-03-30-02"
+    with h5py.File(f"{dataset_path}/fixed_images.h5", "r") as f:
+        fixed_image = f[problem][:].astype(np.float32)
+
+    with h5py.File(f"{dataset_path}/moving_images.h5", "r") as f:
+        moving_image = f[problem][:].astype(np.float32)
+
+    return moving_image, fixed_image
 
 def register_single_image_pair(
     problem,
@@ -79,34 +92,6 @@ def register_single_image_pair(
     model_config_path,
     output_dir,
 ):
-    def read_ch1_problem(
-        problem,
-        dataset_path="/data3/prj_register/2022-01-06-01_diffnorm_ckpt287",
-    ):
-        moving_image_path = \
-                f"{dataset_path}/ch1_registered/{problem}/euler_registered.nrrd"
-        t_fixed = problem.split("to")[1]
-        fixed_image_path = f"{dataset_path}/ch1_recropped/{t_fixed}.nrrd"
-        fixed_image = get_image_T(fixed_image_path).astype(np.float32)
-        moving_image = get_image_T(moving_image_path).astype(np.float32)
-
-        return moving_image, fixed_image
-
-    def read_ch2_problem(
-        problem,
-        dataset_path="/data3/prj_register/2022-01-06-01_diffnorm_ckpt287",
-    ):
-        t_moving, t_fixed = problem.split("to")
-        t_fixed_4 = t_fixed.zfill(4)
-        fixed_image_path = f"{dataset_path}/NRRD_filtered/2022-01-06-01-SWF360-animal1-610LP_t{t_fixed_4}_ch2.nrrd"
-        moving_image_path = f"{dataset_path}/Registered/{problem}/euler_transformed.nrrd"
-        moving_image = get_image_T(moving_image_path).astype(np.float32)
-        fixed_image_T = get_image_T(fixed_image_path).astype(np.float32)
-        fixed_image_median = np.median(fixed_image_T)
-        fixed_image = filter_and_crop(fixed_image_T, fixed_image_median, target_image_shape)
-
-        return moving_image, fixed_image
-
     def compute_score(score_class, *args):
 
         if len(args) == 2:
@@ -190,23 +175,20 @@ def register_single_image_pair(
 
     all_outputs = {"ch1": dict(), "ch2": dict()}
 
-    ch2_moving_image, ch2_fixed_image = read_ch2_problem(problem)
+    ch2_moving_image, ch2_fixed_image = read_problem_h5(problem, 2)
     all_outputs["ch2"] = _warp_ch2_with_ddf(problem, ch2_fixed_image, ch2_moving_image)
 
-    ch1_moving_image, ch1_fixed_image = read_ch1_problem(problem)
+    ch1_moving_image, ch1_fixed_image = read_problem_h5(problem, 1)
     all_outputs["ch1"] = _warp_ch1_with_ddf(problem, all_outputs["ch2"]["ddf"],
             ch1_fixed_image, ch1_moving_image)
 
     return all_outputs
 
-
 def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
 
-    def get_swf360_problems(
-        dataset_path="/data3/prj_register/2022-01-06-01_diffnorm_ckpt287/ch1_registered"
-    ):
-        return [name for name in os.listdir(dataset_path) if
-                os.path.isdir(os.path.join(dataset_path, name))][::-1]
+    def get_swf360_problems():
+        return json.load(
+                open("resources/registration_problems_ALv7-swf360.json"))["train"]["2022-03-30-02"]
 
     def _print_score(experiment, outputs_dict):
         print(
@@ -216,12 +198,20 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
 
     ncc_score_dict = dict()
     every_ncc_score_dict = dict()
-
+    """
+    with open(f"scores/swf360_all_ncc_score_{control_experiment}.json", "r") as f:
+        every_ncc_score_dict = json.load(f)
+        problems_searched = list(every_ncc_score_dict.keys())
+    """
+    problems_searched = []
     base = "/data3/prj_register"
     subdirectory = "centroid_labels_augmented_batched_hybrid"
 
     problems = get_swf360_problems()
-    for problem in problems:
+    problems_to_search = list(set(problems) - set(problems_searched))
+    print(f"remaining problems: {len(problems_to_search)}")
+
+    for problem in problems_to_search:
 
         full_network_outputs = register_single_image_pair(
             problem,
@@ -240,7 +230,6 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             model_config_path=f"{base}/{control_experiment}/config_batch.yaml",
             output_dir="/data3/prj_register/2024-02-15_debug"
         )
-
         condition = control_network_outputs["ch1"]["ncc"] < 0.8 and \
             control_network_outputs["ch2"]["ncc"] > 0.9 and \
             full_network_outputs["ch1"]["ncc"] > 0.9 and \
@@ -259,8 +248,12 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
                 control_network_outputs["ch2"]["ncc"]
             ]
         }
-        write_to_json(every_ncc_score_dict, "swf360_every_score_corr", "scores")
-
+        write_to_json(
+            every_ncc_score_dict,
+            f"ALv7-swf360_all_ncc_score_{control_experiment}",
+            "scores"
+        )
+        """
         if condition:
             ncc_score_dict[problem] = {
                 "full": [
@@ -272,6 +265,19 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
                     control_network_outputs["ch2"]["ncc"]
                 ]
             }
-            write_to_json(ncc_score_dict, "swf360_condition_met_corr", "scores")
-
+            write_to_json(
+                ncc_score_dict,
+                f"swf360_ncc_condition_met_{control_experiment}",
+                "scores"
+            )
+        """
+# full network: "2024-01-30-train"
+# no-label network: '2024-03-08-train"
+# no-regualrization network: "2024-03-15-train-2I"
+# no-image network: "2024-05-02-train"
+# ALv6 - "2022-03-30-01" - SWF360
+# ALv7 - "2022-03-30-02" - SWF360
+# ALv8 - "2022-03-31-01" - SWF360
+#find_problems_meet_criteria("2024-01-30-train", "2024-05-02-train")
 find_problems_meet_criteria("2024-01-30-train", "2024-03-08-train")
+
