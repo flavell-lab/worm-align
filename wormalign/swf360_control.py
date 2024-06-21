@@ -14,6 +14,12 @@ if GPUS:
     except RuntimeError as e:
         print(e)
 
+DATASET_NAMES = {
+    "ALv6": "2022-03-30-01",
+    "ALv7": "2022-03-30-02",
+    "ALv8": "2022-03-31-01"
+}
+
 def normalize_batched_image(batched_image, eps=1e-7):
     """
     Normalizes each image in a batch to [0, 1] range separately.
@@ -71,11 +77,13 @@ def compute_centroid_labels(image, max_centroids = 200):
     return centroids
 
 def read_problem_h5(
+    dataset,
     problem,
     channel_num,
 ):
+    dataset_name = DATASET_NAMES[dataset]
     dataset_path = \
-    f"/data3/prj_register/ALv7_swf360_ch{channel_num}/train/nonaugmented/2022-03-30-02"
+    f"/data3/prj_register/{dataset}_swf360_ch{channel_num}/train/nonaugmented/{dataset_name}"
     with h5py.File(f"{dataset_path}/fixed_images.h5", "r") as f:
         fixed_image = f[problem][:].astype(np.float32)
 
@@ -85,6 +93,7 @@ def read_problem_h5(
     return moving_image, fixed_image
 
 def register_single_image_pair(
+    dataset,
     problem,
     target_image_shape,
     target_label_shape,
@@ -175,20 +184,25 @@ def register_single_image_pair(
 
     all_outputs = {"ch1": dict(), "ch2": dict()}
 
-    ch2_moving_image, ch2_fixed_image = read_problem_h5(problem, 2)
+    ch2_moving_image, ch2_fixed_image = read_problem_h5(dataset, problem, 2)
     all_outputs["ch2"] = _warp_ch2_with_ddf(problem, ch2_fixed_image, ch2_moving_image)
 
-    ch1_moving_image, ch1_fixed_image = read_problem_h5(problem, 1)
+    ch1_moving_image, ch1_fixed_image = read_problem_h5(dataset, problem, 1)
     all_outputs["ch1"] = _warp_ch1_with_ddf(problem, all_outputs["ch2"]["ddf"],
             ch1_fixed_image, ch1_moving_image)
 
     return all_outputs
 
-def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
 
-    def get_swf360_problems():
+def register_all_swf360_problems(experiments, dataset, ckpt=287):
+
+    def get_swf360_problems(dataset):
+        """ dataset := one of 'ALv6', 'ALv7', 'ALv8' """
+        dataset_name = DATASET_NAMES[dataset]
         return json.load(
-                open("resources/registration_problems_ALv7-swf360.json"))["train"]["2022-03-30-02"]
+                open(
+                    f"resources/registration_problems_{dataset}-swf360_sampled.json"
+                ))["train"][dataset_name]
 
     def _print_score(experiment, outputs_dict):
         print(
@@ -196,88 +210,46 @@ def find_problems_meet_criteria(full_experiment, control_experiment, ckpt=287):
             {experiment} ch2 NCC: {'{:.2f}'.format(outputs_dict['ch2']['ncc'])}"""
         )
 
-    ncc_score_dict = dict()
-    every_ncc_score_dict = dict()
-    """
-    with open(f"scores/swf360_all_ncc_score_{control_experiment}.json", "r") as f:
-        every_ncc_score_dict = json.load(f)
-        problems_searched = list(every_ncc_score_dict.keys())
-    """
-    problems_searched = []
+    experiment_to_network_version = {
+            "2024-01-30-train": "full",
+            "2024-03-08-train": "nolabel",
+            "2024-03-15-train-2I": "noreg",
+            "2024-05-02-train": "noimage"
+    }
+    ncc_scores_dict = dict()
     base = "/data3/prj_register"
     subdirectory = "centroid_labels_augmented_batched_hybrid"
+    problems = get_swf360_problems(dataset)
 
-    problems = get_swf360_problems()
-    problems_to_search = list(set(problems) - set(problems_searched))
-    print(f"remaining problems: {len(problems_to_search)}")
+    for problem in tqdm(problems):
 
-    for problem in problems_to_search:
+        ncc_scores_dict[problem] = {}
 
-        full_network_outputs = register_single_image_pair(
-            problem,
-            target_image_shape=(284, 120, 64),
-            target_label_shape=(200, 3),
-            model_ckpt_path=f"{base}/{full_experiment}/{subdirectory}/save/ckpt-{ckpt}",
-            model_config_path=f"{base}/{full_experiment}/config_batch.yaml",
-            output_dir="/data3/prj_register/2024-02-15_debug"
-        )
-
-        control_network_outputs = register_single_image_pair(
-            problem,
-            target_image_shape=(284, 120, 64),
-            target_label_shape=(200, 3),
-            model_ckpt_path=f"{base}/{control_experiment}/{subdirectory}/save/ckpt-{ckpt}",
-            model_config_path=f"{base}/{control_experiment}/config_batch.yaml",
-            output_dir="/data3/prj_register/2024-02-15_debug"
-        )
-        condition = control_network_outputs["ch1"]["ncc"] < 0.8 and \
-            control_network_outputs["ch2"]["ncc"] > 0.9 and \
-            full_network_outputs["ch1"]["ncc"] > 0.9 and \
-            full_network_outputs["ch2"]["ncc"] > 0
-
-        _print_score(full_experiment, full_network_outputs)
-        _print_score(control_experiment, control_network_outputs)
-
-        every_ncc_score_dict[problem] = {
-            "full": [
-                full_network_outputs["ch1"]["ncc"],
-                full_network_outputs["ch2"]["ncc"]
-            ],
-            "control": [
-                control_network_outputs["ch1"]["ncc"],
-                control_network_outputs["ch2"]["ncc"]
+        for experiment in experiments:
+            network_version = experiment_to_network_version[experiment]
+            network_outputs = register_single_image_pair(
+                dataset,
+                problem,
+                target_image_shape=(284, 120, 64),
+                target_label_shape=(200, 3),
+                model_ckpt_path=f"{base}/{experiment}/{subdirectory}/save/ckpt-{ckpt}",
+                model_config_path=f"{base}/{experiment}/config_batch.yaml",
+                output_dir="/data3/prj_register/2024-02-15_debug"
+            )
+            ncc_scores_dict[problem][network_version] = [
+                    network_outputs["ch1"]["ncc"],
+                    network_outputs["ch2"]["ncc"]
             ]
-        }
+            #_print_score(full_experiment, full_network_outputs)
+            #_print_score(control_experiment, control_network_outputs)
         write_to_json(
-            every_ncc_score_dict,
-            f"ALv7-swf360_all_ncc_score_{control_experiment}",
+            ncc_scores_dict,
+            f"{dataset}-swf360_ncc_scores_pernetwork",
             "scores"
         )
-        """
-        if condition:
-            ncc_score_dict[problem] = {
-                "full": [
-                    full_network_outputs["ch1"]["ncc"],
-                    full_network_outputs["ch2"]["ncc"]
-                ],
-                "control": [
-                    control_network_outputs["ch1"]["ncc"],
-                    control_network_outputs["ch2"]["ncc"]
-                ]
-            }
-            write_to_json(
-                ncc_score_dict,
-                f"swf360_ncc_condition_met_{control_experiment}",
-                "scores"
-            )
-        """
-# full network: "2024-01-30-train"
-# no-label network: '2024-03-08-train"
-# no-regualrization network: "2024-03-15-train-2I"
-# no-image network: "2024-05-02-train"
-# ALv6 - "2022-03-30-01" - SWF360
-# ALv7 - "2022-03-30-02" - SWF360
-# ALv8 - "2022-03-31-01" - SWF360
-#find_problems_meet_criteria("2024-01-30-train", "2024-05-02-train")
-find_problems_meet_criteria("2024-01-30-train", "2024-03-08-train")
 
+
+experiments = ["2024-01-30-train", "2024-03-08-train", "2024-03-15-train-2I",
+               "2024-05-02-train"]
+dataset = "ALv6"
+register_all_swf360_problems(experiments, dataset)
