@@ -2,9 +2,11 @@ from deepreg.predict import unwrapped_predict
 from tqdm import tqdm
 from wormalign.utils import get_image_T, write_to_json, filter_and_crop
 import deepreg.model.layer as layer
+import json
 import numpy as np
 import os
 import tensorflow as tf
+import h5py
 
 DEVICE = 0
 GPUS = tf.config.list_physical_devices('GPU')
